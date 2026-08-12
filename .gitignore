@@ -1,0 +1,35 @@
+# Inputs and outputs are large (~12 GB) and reproducible from the scripts.
+# Track code, docs and protocol only.
+
+# Archives and simulation inputs
+*.h5
+noise2a/
+gb1/
+
+# Fit outputs, posterior surfaces, caches
+*.npz
+esa_m0_bincheck/
+esa_m0_gap_results/
+esa_m0_gap_sensitivity/
+esa_m0_method_prototypes/
+esa_m0_method_results/
+esa_m0_method_sensitivity/
+esa_m0_method_smoke/
+esa_m0_pilot/
+esa_m0_pilot_full/
+esa_m0_results/
+esa_m0_results_f36/
+esa_m0_results_f48/
+
+# Figures. esa_m0_publication_results/ is deliberately NOT ignored: it holds
+# the selected manuscript figures and the machine-readable summary JSON.
+*.png
+*.pdf
+pspline_aet_plots/
+pspline_univar_plots/
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.DS_Store

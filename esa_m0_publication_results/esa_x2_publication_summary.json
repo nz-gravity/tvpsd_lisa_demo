@@ -1,0 +1,492 @@
+{
+  "scope": "single archived ESA-orbit X2 realization; M0 total PSD",
+  "data": {
+    "archive": "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation/combined_esa_xyz.h5",
+    "orbits": "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation/noise2a/orbits.h5",
+    "duration_days": 364.0888888888889,
+    "frequency_hz": [
+      0.00013020833333333333,
+      0.1
+    ],
+    "wdm_shape": [
+      2046,
+      3069
+    ]
+  },
+  "selected_model": {
+    "form": "log S = log S_reference + g(f) + h(t,f)",
+    "name": "stationary_plus_interaction",
+    "interaction_zero_time_mean": true,
+    "interaction_scale_prior": 0.5,
+    "interaction_time_knots": 5,
+    "interaction_parameter_count": 361,
+    "plain_tensor_parameter_count": 480,
+    "interaction_scale_posterior": {
+      "median": 0.047847141677495035,
+      "p05": 0.04382009581601169,
+      "p95": 0.052511387237380504
+    }
+  },
+  "continuous_sampler": {
+    "divergences": 0,
+    "max_rhat": 1.021931078047805,
+    "min_ess": 168.44190339222575,
+    "tree_depth_saturation": 0.0,
+    "min_ebfmi": 0.8633256898263587,
+    "mean_accept_prob": 0.9505791207019721
+  },
+  "continuous_passes_sampler_gates": true,
+  "continuous_scores": {
+    "ordinary_low_tv": {
+      "n_cells": 25988,
+      "log_rmse": 0.04591111898710332,
+      "log_bias": -0.0021704638505005663,
+      "coverage_90": 0.7073264583653994
+    },
+    "ordinary_low_reference": {
+      "n_cells": 25988,
+      "log_rmse": 2.0118065063130945,
+      "log_bias": -1.8807332688001965
+    },
+    "ordinary_low_stationary": {
+      "n_cells": 25988,
+      "log_rmse": 0.3183539166779455,
+      "log_bias": 0.05049583536145992,
+      "coverage_90": 0.0567184854548253
+    },
+    "ordinary_low_stationary_empirical": {
+      "n_cells": 25988,
+      "log_rmse": 0.33812810031484686,
+      "log_bias": 0.05364524440074481
+    },
+    "validation_low_tv": {
+      "n_cells": 25988,
+      "log_rmse": 0.045929816513934685,
+      "log_bias": -0.002143999468017771,
+      "coverage_90": 0.7080190857318762
+    },
+    "validation_low_reference": {
+      "n_cells": 25988,
+      "log_rmse": 2.0117628650760575,
+      "log_bias": -1.8806878118219013
+    },
+    "validation_low_stationary": {
+      "n_cells": 25988,
+      "log_rmse": 0.3183772267107401,
+      "log_bias": 0.05054129233975505,
+      "coverage_90": 0.05825765738032938
+    },
+    "validation_low_stationary_empirical": {
+      "n_cells": 25988,
+      "log_rmse": 0.33818254492185584,
+      "log_bias": 0.05374981973062118
+    },
+    "ordinary_retained_full_tv": {
+      "n_cells": 862760,
+      "log_rmse": 0.013744870099813494,
+      "log_bias": 0.00022964291114838472,
+      "coverage_90": 0.8861583754462423
+    },
+    "ordinary_retained_full_reference": {
+      "n_cells": 862760,
+      "log_rmse": 0.3633417631827668,
+      "log_bias": -0.0659205943463918
+    },
+    "ordinary_retained_full_stationary": {
+      "n_cells": 862760,
+      "log_rmse": 0.05985078892963866,
+      "log_bias": 0.0018029530181893636,
+      "coverage_90": 0.8319266076313228
+    },
+    "ordinary_retained_full_stationary_empirical": {
+      "n_cells": 862760,
+      "log_rmse": 0.30456933941328,
+      "log_bias": 0.03641989738202027
+    },
+    "validation_retained_full_tv": {
+      "n_cells": 862775,
+      "log_rmse": 0.013760272573379688,
+      "log_bias": 0.00023407350158072477,
+      "coverage_90": 0.886410709628814
+    },
+    "validation_retained_full_reference": {
+      "n_cells": 862775,
+      "log_rmse": 0.36333054656344743,
+      "log_bias": -0.06591775856912115
+    },
+    "validation_retained_full_stationary": {
+      "n_cells": 862775,
+      "log_rmse": 0.05985459892928182,
+      "log_bias": 0.001804498096458773,
+      "coverage_90": 0.832001390860885
+    },
+    "validation_retained_full_stationary_empirical": {
+      "n_cells": 862775,
+      "log_rmse": 0.30477694941410105,
+      "log_bias": 0.03642175586527602
+    },
+    "ordinary_high_continuum_tv": {
+      "n_cells": 684348,
+      "log_rmse": 0.009234408137727013,
+      "log_bias": 0.00041543572119026356,
+      "coverage_90": 0.8989023128583703
+    },
+    "ordinary_high_continuum_reference": {
+      "n_cells": 684348,
+      "log_rmse": 0.0,
+      "log_bias": 0.0
+    },
+    "ordinary_high_continuum_stationary": {
+      "n_cells": 684348,
+      "log_rmse": 0.0036151065844455856,
+      "log_bias": 5.969578586470645e-05,
+      "coverage_90": 0.8758555588677106
+    },
+    "ordinary_high_continuum_stationary_empirical": {
+      "n_cells": 684348,
+      "log_rmse": 0.33394943805039223,
+      "log_bias": 0.0437050957917957
+    },
+    "validation_high_continuum_tv": {
+      "n_cells": 684363,
+      "log_rmse": 0.009201202080038585,
+      "log_bias": 0.00041268908912929416,
+      "coverage_90": 0.8992245343479995
+    },
+    "validation_high_continuum_reference": {
+      "n_cells": 684363,
+      "log_rmse": 0.0,
+      "log_bias": 0.0
+    },
+    "validation_high_continuum_stationary": {
+      "n_cells": 684363,
+      "log_rmse": 0.0036150747705294573,
+      "log_bias": 5.955167366529267e-05,
+      "coverage_90": 0.8758597411023097
+    },
+    "validation_high_continuum_stationary_empirical": {
+      "n_cells": 684363,
+      "log_rmse": 0.3341846198863057,
+      "log_bias": 0.0436952433043866
+    }
+  },
+  "continuous_blind_diagnostics": {
+    "validation": {
+      "low": {
+        "reference_only": {
+          "n_cells": 25988,
+          "mean_z": -0.01052922708729305,
+          "mean_z2": 8.076931038576602,
+          "median_z2_over_chi2_1_median": 6.302553386855902,
+          "central_90_fraction": 0.4880714175773434,
+          "lag1_time_product": 0.021807293092573118,
+          "lag1_frequency_product": -0.018394569998574195,
+          "mean_whittle_log_score": 12.849388680891352,
+          "mean_log_score_gain_vs_reference": 0.0
+        },
+        "stationary_residual": {
+          "n_cells": 25988,
+          "mean_z": -0.003866575625832242,
+          "mean_z2": 0.9975522182618377,
+          "median_z2_over_chi2_1_median": 0.9428062846570858,
+          "central_90_fraction": 0.9008003694012621,
+          "lag1_time_product": 0.005128701648087031,
+          "lag1_frequency_product": 0.0003758020183088024,
+          "mean_whittle_log_score": 15.423463538967905,
+          "mean_log_score_gain_vs_reference": 2.5740748580765533
+        },
+        "tv_residual": {
+          "n_cells": 25988,
+          "mean_z": -0.004538021131810358,
+          "mean_z2": 1.0020062570829866,
+          "median_z2_over_chi2_1_median": 1.0088066018419448,
+          "central_90_fraction": 0.8974141911651532,
+          "lag1_time_product": 0.0034158661817851334,
+          "lag1_frequency_product": -7.305351561905917e-05,
+          "mean_whittle_log_score": 15.447579165461216,
+          "mean_log_score_gain_vs_reference": 2.598190484569864
+        }
+      },
+      "retained_full": {
+        "reference_only": {
+          "n_cells": 862775,
+          "mean_z": -0.0013833758544670406,
+          "mean_z2": 1.2315683678272742,
+          "median_z2_over_chi2_1_median": 1.0472510629059397,
+          "central_90_fraction": 0.8859737475007968,
+          "lag1_time_product": -4.7514961543654235e-05,
+          "lag1_frequency_product": 0.001235003599505434,
+          "mean_whittle_log_score": 11.786859876279093,
+          "mean_log_score_gain_vs_reference": 0.0
+        },
+        "stationary_residual": {
+          "n_cells": 862775,
+          "mean_z": -0.0012228378348623683,
+          "mean_z2": 1.0004535614146985,
+          "median_z2_over_chi2_1_median": 0.9964609984089366,
+          "central_90_fraction": 0.9003587262032395,
+          "lag1_time_product": -0.0008067901770208793,
+          "lag1_frequency_product": 0.0023330202442080872,
+          "mean_whittle_log_score": 11.868556151152593,
+          "mean_log_score_gain_vs_reference": 0.08169627487349906
+        },
+        "tv_residual": {
+          "n_cells": 862775,
+          "mean_z": -0.0012328177368224448,
+          "mean_z2": 1.0003670951923977,
+          "median_z2_over_chi2_1_median": 0.9984294185343756,
+          "central_90_fraction": 0.9003540900002898,
+          "lag1_time_product": -0.0008767114893790157,
+          "lag1_frequency_product": 0.0023720653315181537,
+          "mean_whittle_log_score": 11.869384596561181,
+          "mean_log_score_gain_vs_reference": 0.08252472028208757
+        }
+      },
+      "high_continuum": {
+        "reference_only": {
+          "n_cells": 684363,
+          "mean_z": -0.0006908193550048312,
+          "mean_z2": 1.0017756900941168,
+          "median_z2_over_chi2_1_median": 1.0007367067275468,
+          "central_90_fraction": 0.899997515938179,
+          "lag1_time_product": -0.001786316555214858,
+          "lag1_frequency_product": 0.00307565054073301,
+          "mean_whittle_log_score": 11.519237643379576,
+          "mean_log_score_gain_vs_reference": 0.0
+        },
+        "stationary_residual": {
+          "n_cells": 684363,
+          "mean_z": -0.0006892841530233311,
+          "mean_z2": 1.0017239761012464,
+          "median_z2_over_chi2_1_median": 1.000512313444564,
+          "central_90_fraction": 0.8999960547253432,
+          "lag1_time_product": -0.0017880602763176553,
+          "lag1_frequency_product": 0.003081065520541933,
+          "mean_whittle_log_score": 11.519233724539175,
+          "mean_log_score_gain_vs_reference": -3.91884040062962e-06
+        },
+        "tv_residual": {
+          "n_cells": 684363,
+          "mean_z": -0.0006907116718123746,
+          "mean_z2": 1.0014042634848965,
+          "median_z2_over_chi2_1_median": 1.0000526059397654,
+          "central_90_fraction": 0.9000618093029576,
+          "lag1_time_product": -0.0017756022949766159,
+          "lag1_frequency_product": 0.003076445644140743,
+          "mean_whittle_log_score": 11.51921701213962,
+          "mean_log_score_gain_vs_reference": -2.0631239955548608e-05
+        }
+      }
+    },
+    "test": {
+      "low": {
+        "reference_only": {
+          "n_cells": 25988,
+          "mean_z": -0.020133766705793345,
+          "mean_z2": 8.042803535564559,
+          "median_z2_over_chi2_1_median": 6.3281602440471705,
+          "central_90_fraction": 0.4888410035400954,
+          "lag1_time_product": -0.059742314398925855,
+          "lag1_frequency_product": 0.016740821111668882,
+          "mean_whittle_log_score": 12.86642287322158,
+          "mean_log_score_gain_vs_reference": 0.0
+        },
+        "stationary_residual": {
+          "n_cells": 25988,
+          "mean_z": -0.007102238295579756,
+          "mean_z2": 1.0018174780878284,
+          "median_z2_over_chi2_1_median": 0.9689214840359909,
+          "central_90_fraction": 0.9008388486993997,
+          "lag1_time_product": -0.007753502461213314,
+          "lag1_frequency_product": 0.002248628242558591,
+          "mean_whittle_log_score": 15.42130134987912,
+          "mean_log_score_gain_vs_reference": 2.5548784766575388
+        },
+        "tv_residual": {
+          "n_cells": 25988,
+          "mean_z": -0.004957464950334096,
+          "mean_z2": 1.0121176579973574,
+          "median_z2_over_chi2_1_median": 1.0182941093503122,
+          "central_90_fraction": 0.8996844697552716,
+          "lag1_time_product": -0.009116206286021125,
+          "lag1_frequency_product": 0.0014073001799522853,
+          "mean_whittle_log_score": 15.442484409530334,
+          "mean_log_score_gain_vs_reference": 2.576061536308753
+        }
+      },
+      "retained_full": {
+        "reference_only": {
+          "n_cells": 862760,
+          "mean_z": 0.0010366963590414243,
+          "mean_z2": 1.232587410314466,
+          "median_z2_over_chi2_1_median": 1.0524399354477008,
+          "central_90_fraction": 0.8852485047985534,
+          "lag1_time_product": 0.00018159328955665743,
+          "lag1_frequency_product": 0.0011959831323494548,
+          "mean_whittle_log_score": 11.786251317902497,
+          "mean_log_score_gain_vs_reference": 0.0
+        },
+        "stationary_residual": {
+          "n_cells": 862760,
+          "mean_z": 0.0015197552736540606,
+          "mean_z2": 1.0022363863094899,
+          "median_z2_over_chi2_1_median": 1.0017129401171099,
+          "central_90_fraction": 0.8996603922295887,
+          "lag1_time_product": 0.0014176953654785572,
+          "lag1_frequency_product": 0.0009510889301332778,
+          "mean_whittle_log_score": 11.867565056222695,
+          "mean_log_score_gain_vs_reference": 0.08131373832019761
+        },
+        "tv_residual": {
+          "n_cells": 862760,
+          "mean_z": 0.0016049009430881061,
+          "mean_z2": 1.0022930856358936,
+          "median_z2_over_chi2_1_median": 1.0033691345523843,
+          "central_90_fraction": 0.8996789373638092,
+          "lag1_time_product": 0.0013572602753238545,
+          "lag1_frequency_product": 0.0009345350093061919,
+          "mean_whittle_log_score": 11.868323361613013,
+          "mean_log_score_gain_vs_reference": 0.08207204371051624
+        }
+      },
+      "high_continuum": {
+        "reference_only": {
+          "n_cells": 684348,
+          "mean_z": 0.0028472238585356257,
+          "mean_z2": 1.002472315222932,
+          "median_z2_over_chi2_1_median": 1.004276733374186,
+          "central_90_fraction": 0.899577407985411,
+          "lag1_time_product": 0.0009875868080747086,
+          "lag1_frequency_product": 0.0018578922431131582,
+          "mean_whittle_log_score": 11.518761042950691,
+          "mean_log_score_gain_vs_reference": 0.0
+        },
+        "stationary_residual": {
+          "n_cells": 684348,
+          "mean_z": 0.002847485412739079,
+          "mean_z2": 1.0024085595781942,
+          "median_z2_over_chi2_1_median": 1.004136640409744,
+          "central_90_fraction": 0.8995934816789118,
+          "lag1_time_product": 0.0009914772101202271,
+          "lag1_frequency_product": 0.0018603332098986929,
+          "mean_whittle_log_score": 11.518763072880128,
+          "mean_log_score_gain_vs_reference": 2.029929436986322e-06
+        },
+        "tv_residual": {
+          "n_cells": 684348,
+          "mean_z": 0.00284931439923157,
+          "mean_z2": 1.0020769173009254,
+          "median_z2_over_chi2_1_median": 1.0037026923211092,
+          "central_90_fraction": 0.8996446252491422,
+          "lag1_time_product": 0.0010000034899263267,
+          "lag1_frequency_product": 0.0018686029135132564,
+          "mean_whittle_log_score": 11.5187510240511,
+          "mean_log_score_gain_vs_reference": -1.0018899590846786e-05
+        }
+      }
+    }
+  },
+  "gap_runs": [
+    {
+      "duration_days": 1.0,
+      "buffer_pixels": 1.0,
+      "gap_row_fraction": 0.0039100684261974585,
+      "sampler": {
+        "divergences": 0,
+        "max_rhat": 1.0616390113453904,
+        "min_ess": 68.16092373155797,
+        "tree_depth_saturation": 0.0,
+        "min_ebfmi": 0.781590947954174,
+        "mean_accept_prob": 0.982230193569001
+      },
+      "passes_sampler_gates": false,
+      "adjacent_low_mean_z2": 1.1143685248042414,
+      "adjacent_low_central_90_fraction": 0.8764044943820225,
+      "gap_low_log_rmse_truth_only": 0.04174145946638649,
+      "gap_low_coverage_90_truth_only": 0.7415730337078652,
+      "test_low_tv_minus_stationary_log_score": 0.021142514272845858
+    },
+    {
+      "duration_days": 7.0,
+      "buffer_pixels": 1.0,
+      "gap_row_fraction": 0.020527859237536656,
+      "sampler": {
+        "divergences": 0,
+        "max_rhat": 1.0194687602228782,
+        "min_ess": 226.38719996933597,
+        "tree_depth_saturation": 0.0,
+        "min_ebfmi": 0.7316485258447146,
+        "mean_accept_prob": 0.9476989147320232
+      },
+      "passes_sampler_gates": true,
+      "adjacent_low_mean_z2": 1.0796035680285185,
+      "adjacent_low_central_90_fraction": 0.8848314606741573,
+      "gap_low_log_rmse_truth_only": 0.040147209845467956,
+      "gap_low_coverage_90_truth_only": 0.7841091492776886,
+      "test_low_tv_minus_stationary_log_score": 0.02145422466785263
+    },
+    {
+      "duration_days": 30.0,
+      "buffer_pixels": 1.0,
+      "gap_row_fraction": 0.08357771260997067,
+      "sampler": {
+        "divergences": 0,
+        "max_rhat": 1.0516012391005318,
+        "min_ess": 39.916070614057205,
+        "tree_depth_saturation": 0.0,
+        "min_ebfmi": 0.9472163433597924,
+        "mean_accept_prob": 0.9741796988374672
+      },
+      "passes_sampler_gates": false,
+      "adjacent_low_mean_z2": 1.1199747770337316,
+      "adjacent_low_central_90_fraction": 0.8960674157303371,
+      "gap_low_log_rmse_truth_only": 0.05423812916619825,
+      "gap_low_coverage_90_truth_only": 0.7779091924567975,
+      "test_low_tv_minus_stationary_log_score": 0.022290854571192398
+    },
+    {
+      "duration_days": 7.0,
+      "buffer_pixels": 0.0,
+      "gap_row_fraction": 0.019550342130987292,
+      "sampler": {
+        "divergences": 0,
+        "max_rhat": 1.041254300115774,
+        "min_ess": 70.57716273656608,
+        "tree_depth_saturation": 0.0,
+        "min_ebfmi": 1.0610698863877954,
+        "mean_accept_prob": 0.9821233009327912
+      },
+      "passes_sampler_gates": true,
+      "adjacent_low_mean_z2": 2.6905301802877473,
+      "adjacent_low_central_90_fraction": 0.8623595505617978,
+      "gap_low_log_rmse_truth_only": 0.03939585551029826,
+      "gap_low_coverage_90_truth_only": 0.7901685393258427,
+      "test_low_tv_minus_stationary_log_score": 0.021305030336977282
+    },
+    {
+      "duration_days": 7.0,
+      "buffer_pixels": 2.0,
+      "gap_row_fraction": 0.021505376344086023,
+      "sampler": {
+        "divergences": 0,
+        "max_rhat": 1.0561602850775167,
+        "min_ess": 79.90349052251486,
+        "tree_depth_saturation": 0.0,
+        "min_ebfmi": 0.9287966865265794,
+        "mean_accept_prob": 0.9797900376906924
+      },
+      "passes_sampler_gates": false,
+      "adjacent_low_mean_z2": 1.0865600005862108,
+      "adjacent_low_central_90_fraction": 0.8904494382022472,
+      "gap_low_log_rmse_truth_only": 0.040014453345662886,
+      "gap_low_coverage_90_truth_only": 0.7648110316649642,
+      "test_low_tv_minus_stationary_log_score": 0.021479759756950045
+    }
+  ],
+  "interpretation": {
+    "selected_gap_buffer_pixels": 1,
+    "selection_basis": "blind low-band whitening on observed rows adjacent to the gap",
+    "gap_interior_metrics": "truth-only simulation stress tests, not externally observable diagnostics",
+    "short_sensitivity_runs": "point-estimate robustness only when sampler gates fail"
+  }
+}
