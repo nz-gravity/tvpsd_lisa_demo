@@ -46,6 +46,11 @@ from tv_pspline_psd import (  # noqa: E402
     run_stationary_psd_mcmc,
     wdm_analysis_coefficients,
 )
+from aet_diagonal import (  # noqa: E402
+    diagonal_xyz_psd_to_aet,
+    xyz_covariance_to_aet_diagonal,
+    xyz_to_aet_series,
+)
 
 
 SECONDS_PER_DAY = 86_400.0
@@ -55,6 +60,18 @@ DEFAULT_ARCHIVE = HERE / "combined_esa_xyz.h5"
 DEFAULT_ORBITS = HERE / "noise2a" / "orbits.h5"
 DEFAULT_RESULTS = HERE / "esa_m0_results"
 CHI_SQUARE_ONE_MEDIAN = 0.4549364231195727
+
+# The archive's "tdi/total", "truth/galactic_psd" and "truth/noise_psd"
+# datasets are stored as (X2, Y2, Z2) on their leading axis. A/E/T are not
+# stored -- they are the orthogonal rotation of X/Y/Z (see aet_diagonal.py),
+# applied to the time series (for the fitted data) or to the per-channel PSD
+# under the zero-XYZ-cross-spectrum contract already used by the M1 pilot
+# (for truth/reference comparison only; see aet_diagonal.py's docstring for
+# why that is an approximation for a physical response, adequate for this
+# controlled archive).
+XYZ_CHANNELS = ("X2", "Y2", "Z2")
+AET_CHANNELS = ("A", "E", "T")
+ALL_CHANNELS = XYZ_CHANNELS + AET_CHANNELS
 
 
 def wdm_valid_length(n_requested: int, nt: int) -> int:
@@ -115,19 +132,36 @@ def load_esa_orbits(path: Path) -> InterpolatedOrbits:
     )
 
 
-def analytic_x2_noise_components_psd(
+def _channel_diagonal(covariance: np.ndarray, channel: str) -> np.ndarray:
+    """Extract one channel's real auto-PSD from a ``(freq, time, 3, 3)`` XYZ
+    covariance. XYZ channels read the matrix diagonal directly (frozen X2
+    path: ``channel_index=0`` is byte-for-byte the prior hardcoded ``[...,0,0]``
+    index); AET channels rotate to A/E/T first under the zero-XYZ-cross-
+    spectrum contract, then take the diagonal.
+    """
+    if channel in XYZ_CHANNELS:
+        index = XYZ_CHANNELS.index(channel)
+        return np.asarray(covariance[..., index, index].real)
+    index = AET_CHANNELS.index(channel)
+    return xyz_covariance_to_aet_diagonal(covariance)[..., index]
+
+
+def analytic_channel_noise_components_psd(
+    channel: str,
     orbit_path: Path,
     time_tcb: np.ndarray,
     frequency_hz: np.ndarray,
     *,
     frequency_chunk: int = 96,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Direct analytic ESA-orbit X2 OMS and TM PSDs on a dense target grid.
+    """Direct analytic ESA-orbit OMS and TM PSDs for one channel.
 
     The returned array has shape ``(time, frequency)`` and is in the same
     fractional-frequency-squared per Hz units as the archive truth.  Frequency
     chunking avoids materialising the full XYZ covariance tensor at once.
     """
+    if channel not in ALL_CHANNELS:
+        raise ValueError(f"channel must be one of {ALL_CHANNELS}, got {channel!r}")
     time_tcb = np.asarray(time_tcb, dtype=float)
     frequency_hz = np.asarray(frequency_hz, dtype=float)
     orbits = load_esa_orbits(orbit_path)
@@ -157,25 +191,27 @@ def analytic_x2_noise_components_psd(
             duration=SECONDS_PER_YEAR,
         )
         oms_result[:, start:stop] = (
-            np.asarray(oms.compute_covariances(0.0)[..., 0, 0].real).T
+            _channel_diagonal(oms.compute_covariances(0.0), channel).T
             * CARRIER_FREQUENCY_HZ**2
         )
         tm_result[:, start:stop] = (
-            np.asarray(test_mass.compute_covariances(0.0)[..., 0, 0].real).T
+            _channel_diagonal(test_mass.compute_covariances(0.0), channel).T
             * CARRIER_FREQUENCY_HZ**2
         )
     return oms_result, tm_result
 
 
-def analytic_x2_noise_psd(
+def analytic_channel_noise_psd(
+    channel: str,
     orbit_path: Path,
     time_tcb: np.ndarray,
     frequency_hz: np.ndarray,
     *,
     frequency_chunk: int = 96,
 ) -> np.ndarray:
-    """Direct analytic ESA-orbit X2 OMS+TM PSD on a dense target grid."""
-    oms, test_mass = analytic_x2_noise_components_psd(
+    """Direct analytic ESA-orbit OMS+TM PSD for one channel."""
+    oms, test_mass = analytic_channel_noise_components_psd(
+        channel,
         orbit_path,
         time_tcb,
         frequency_hz,
