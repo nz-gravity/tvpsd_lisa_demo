@@ -1,50 +1,45 @@
 #!/usr/bin/env bash
-# Pull completed job results + logs from OzStar down to a local destination.
+# Incrementally pull all OzSTAR result artifacts and scheduler logs.
 #
-# Covers the jobs that finished cleanly so far:
-#   15420117  m0_A_free_15420117
-#   15420118  m0_E_free_15420118
-#   15420115  m0_A_ref_15420115
-#   15420116  m0_E_ref_15420116
-#   15420114  m0_x2_corrected_15420114
+# Run from the local machine:
+#   ./ozstar/sync_completed_results.sh [local_results_directory]
 #
-# Run from your LOCAL machine (not on OzStar):
-#   ./sync_completed_results.sh [local_dest_dir]
-#
-# Requires an OzStar SSH alias/host reachable as `ozstar` (or pass
-# REMOTE_HOST=user@host.swin.edu.au as an env var override).
+# With no argument, results land directly in lisa_data_generation/results/
+# (not results/results/). Re-running is safe: rsync transfers only files that
+# are new or changed. This script deliberately has no --delete flag, so local
+# artifacts are never removed when the remote tree changes.
 set -euo pipefail
 
-REMOTE_HOST="${REMOTE_HOST:-ozstar}"
-REMOTE_BASE="/fred/oz200/avajpeyi/projects/WDM_PSD/tvpsd_lisa_demo"
-LOCAL_DEST="${1:-./ozstar_results}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STUDY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-JOBS=(
-    "m0_A_free_15420117"
-    "m0_E_free_15420118"
-    "m0_A_ref_15420115"
-    "m0_E_ref_15420116"
-    "m0_x2_corrected_15420114"
+REMOTE_HOST="${REMOTE_HOST:-avajpeyi@nt.swin.edu.au}"
+REMOTE_BASE="${REMOTE_BASE:-/fred/oz200/avajpeyi/projects/WDM_PSD/tvpsd_lisa_demo}"
+LOCAL_RESULTS="${1:-$STUDY_DIR/results}"
+LOCAL_LOGS="$LOCAL_RESULTS/logs"
+
+mkdir -p "$LOCAL_RESULTS" "$LOCAL_LOGS"
+
+# Keep temporary local-transfer files out of the visible result tree. A file is
+# atomically moved into place at the end of its transfer; the next invocation
+# resumes any interrupted copy.
+RSYNC_OPTIONS=(
+    -avh
+    --progress
+    --partial
+    --partial-dir=.rsync-partial
+    --delay-updates
 )
 
-mkdir -p "$LOCAL_DEST/results" "$LOCAL_DEST/logs"
+echo "== syncing OzSTAR result artifacts =="
+rsync "${RSYNC_OPTIONS[@]}" \
+    "${REMOTE_HOST}:${REMOTE_BASE}/results/" \
+    "$LOCAL_RESULTS/"
 
-for job_dir in "${JOBS[@]}"; do
-    echo "== syncing results/${job_dir} =="
-    rsync -avh --progress \
-        "${REMOTE_HOST}:${REMOTE_BASE}/results/${job_dir}/" \
-        "${LOCAL_DEST}/results/${job_dir}/"
-done
-
-echo "== syncing logs =="
-rsync -avh --progress \
-    --include="m0_15420115.log" \
-    --include="m0_15420116.log" \
-    --include="m0_15420117.log" \
-    --include="m0_15420118.log" \
-    --include="m0_x2_15420114.log" \
-    --exclude="*" \
+echo "== syncing OzSTAR scheduler logs =="
+rsync "${RSYNC_OPTIONS[@]}" \
     "${REMOTE_HOST}:${REMOTE_BASE}/ozstar/logs/" \
-    "${LOCAL_DEST}/logs/"
+    "$LOCAL_LOGS/"
 
-echo "Done. Synced to ${LOCAL_DEST}"
+echo "Done. Results: $LOCAL_RESULTS"
+echo "Logs:    $LOCAL_LOGS"
