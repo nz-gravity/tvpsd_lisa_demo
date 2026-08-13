@@ -103,41 +103,67 @@ def analytic_aet_noise_components_psd(
     orbit_path: Path,
     time_tcb: np.ndarray,
     frequency_hz: np.ndarray,
+    *,
+    frequency_chunk: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute the analytic AET (OMS, test-mass) auto-PSD components.
 
     Each is ``(3, n_time, n_frequency)``, same order and units as the
     combined surface. Kept separate so callers can inspect them individually;
     the M1 likelihood uses their sum as a fixed offset.
+
+    ``frequency_chunk`` evaluates the analytic model in frequency slices
+    instead of materialising the full ``(n_frequency, n_time, 3, 3)`` complex
+    covariance tensor at once, matching ``esa_m0_study.py``'s equivalent.
+    Required on the fine (unbinned, tens-of-thousands-of-channels) WDM grid --
+    without it a full-band call allocates tens of GB. Only the binned
+    ``grouped_frequency`` call sites are small enough to omit it.
     """
     orbits = load_esa_orbits(orbit_path)
-    oms = background_noise.AnalyticOMSNoiseModel(
-        frequency_hz,
-        time_tcb,
-        orbits,
-        tdi_tf_func=tdi.compute_tdi_tf,
-        gen="2.0",
-        oms_isi_carrier_asds=7.9e-12,
-        fs=0.5,
-        duration=SECONDS_PER_YEAR,
-    )
-    test_mass = background_noise.AnalyticTMNoiseModel(
-        frequency_hz,
-        time_tcb,
-        orbits,
-        tdi_tf_func=tdi.compute_tdi_tf_tm,
-        gen="2.0",
-        tm_isi_carrier_asds=2.4e-15,
-        fs=0.5,
-        duration=SECONDS_PER_YEAR,
-    )
 
     def to_aet(xyz_covariance: np.ndarray) -> np.ndarray:
         # Input order is (frequency, time, XYZ, XYZ); return (AET, time, frequency).
         diagonal = xyz_covariance_to_aet_diagonal(xyz_covariance)
         return np.moveaxis(diagonal, (0, 1, 2), (2, 1, 0)) * CARRIER_FREQUENCY_HZ**2
 
-    return to_aet(oms.compute_covariances(0.0)), to_aet(test_mass.compute_covariances(0.0))
+    def build(frequencies: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        oms = background_noise.AnalyticOMSNoiseModel(
+            frequencies,
+            time_tcb,
+            orbits,
+            tdi_tf_func=tdi.compute_tdi_tf,
+            gen="2.0",
+            oms_isi_carrier_asds=7.9e-12,
+            fs=0.5,
+            duration=SECONDS_PER_YEAR,
+        )
+        test_mass = background_noise.AnalyticTMNoiseModel(
+            frequencies,
+            time_tcb,
+            orbits,
+            tdi_tf_func=tdi.compute_tdi_tf_tm,
+            gen="2.0",
+            tm_isi_carrier_asds=2.4e-15,
+            fs=0.5,
+            duration=SECONDS_PER_YEAR,
+        )
+        return (
+            to_aet(oms.compute_covariances(0.0)),
+            to_aet(test_mass.compute_covariances(0.0)),
+        )
+
+    if frequency_chunk is None:
+        return build(frequency_hz)
+
+    n_time = np.asarray(time_tcb).size
+    oms_result = np.empty((3, n_time, frequency_hz.size))
+    tm_result = np.empty((3, n_time, frequency_hz.size))
+    for start in range(0, frequency_hz.size, frequency_chunk):
+        stop = min(start + frequency_chunk, frequency_hz.size)
+        oms_chunk, tm_chunk = build(frequency_hz[start:stop])
+        oms_result[:, :, start:stop] = oms_chunk
+        tm_result[:, :, start:stop] = tm_chunk
+    return oms_result, tm_result
 
 
 def analytic_aet_noise_psd(
@@ -711,14 +737,20 @@ def run(args: argparse.Namespace) -> dict:
     # with one free per-channel amplitude (see aet_component_pspline_nuts);
     # their sum is also retained for simulation-truth recovery and the
     # response-null diagnostic.
-    oms_truth_aet, tm_truth_aet = analytic_aet_noise_components_psd(
-        archive.parent / "noise2a" / "orbits.h5", truth_time, truth_frequency
-    )
-    oms_reference_unbinned = interpolate_surface(
-        oms_truth_aet, truth_time, truth_frequency, absolute_time, fit_frequency
-    )
-    tm_reference_unbinned = interpolate_surface(
-        tm_truth_aet, truth_time, truth_frequency, absolute_time, fit_frequency
+    #
+    # Evaluated DIRECTLY on the fine analysis grid (absolute_time,
+    # fit_frequency), not interpolated from the archive's coarse 256-point
+    # truth_frequency grid: that interpolation smears ~7.5 nats out of the
+    # TDI null (see the null-smearing diagnostic), which then propagates into
+    # both the truth-comparison arrays AND, since bin_channels frequency-
+    # averages this same array, into the fit's own transfer functions.
+    # frequency_chunk keeps this from allocating the full fine-grid complex
+    # covariance tensor at once.
+    oms_reference_unbinned, tm_reference_unbinned = analytic_aet_noise_components_psd(
+        archive.parent / "noise2a" / "orbits.h5",
+        absolute_time,
+        fit_frequency,
+        frequency_chunk=args.reference_frequency_chunk,
     )
     noise_reference_unbinned = oms_reference_unbinned + tm_reference_unbinned
     galactic_truth_unbinned = interpolate_surface(
@@ -861,11 +893,23 @@ def run(args: argparse.Namespace) -> dict:
         warped_frequency_hz = grouped_frequency[None, :] * arm_ratio[:, None]
 
     if args.component_noise:
-        # Transfer functions evaluated directly on the analysis grid, so the
-        # drifting TDI null is exact rather than interpolated from 256 points.
-        transfer_tm, transfer_oms = aet_noise_transfer_functions(
-            archive.parent / "noise2a" / "orbits.h5", absolute_time, grouped_frequency
-        )
+        # Transfer functions from the SAME bin-averaged reference used for
+        # truth comparison (oms/tm_reference_binned), not a fresh point
+        # evaluation at the bin's nominal frequency. Those differ badly near
+        # a null: the null core is ~2 mHz wide and highly nonlinear, while a
+        # bin can be sub-mHz to ~1 mHz wide, so bin-averaging the fine-grid
+        # reference in linear power (matching how the observed data itself
+        # was pooled) gives a materially different, and correct, value from
+        # sampling the analytic model once at the bin center. Using the
+        # latter for the fit while comparing against the former for "truth"
+        # silently miscalibrated the likelihood across the whole
+        # null-adjacent band -- not just the narrow core a response-null mask
+        # is built to catch -- because the *data* term was bin-averaged
+        # correctly but the *model* term was not.
+        theory_tm = tm_theory_psd(grouped_frequency)[None, None, :]
+        theory_oms = oms_theory_psd(grouped_frequency)[None, None, :]
+        transfer_tm = tm_reference_binned / theory_tm
+        transfer_oms = oms_reference_binned / theory_oms
         posterior = fit_aet_component_noise_nuts(
             np.where(fit_valid, observed_binned, 1.0),
             np.where(fit_valid, counts, 1.0),
@@ -1182,6 +1226,10 @@ def parser() -> argparse.ArgumentParser:
     argument_parser.add_argument(
         "--t-leakage-centre", type=float, default=3.0e-5,
         help="prior centre for the T null-leakage fraction kappa",
+    )
+    argument_parser.add_argument(
+        "--reference-frequency-chunk", type=int, default=96,
+        help="frequency chunk size for the direct (unsmeared) analytic reference",
     )
     argument_parser.add_argument("--phi-time", type=float, default=100.0)
     argument_parser.add_argument("--phi-frequency", type=float, default=100.0)

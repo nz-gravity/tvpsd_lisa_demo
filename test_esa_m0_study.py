@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from esa_m0_study import (
+    analysis_masks,
     analysis_row_split,
     blind_whitening_diagnostics,
     block_holdout,
@@ -55,6 +56,50 @@ def test_analysis_split_is_disjoint_and_complete():
     assert not np.any(training & test)
     assert not np.any(validation & test)
     assert np.any(validation) and np.any(test)
+
+
+def test_inference_and_evaluation_masks_are_separate():
+    training = np.array([True, False, True])
+    response_keep = np.array(
+        [
+            [True, False, True, False],
+            [True, True, False, False],
+            [False, True, True, False],
+        ]
+    )
+
+    inference, evaluation = analysis_masks(training, response_keep)
+
+    assert np.all(inference[training])
+    assert not np.any(inference[~training])
+    assert np.array_equal(evaluation, response_keep)
+    assert np.any(inference & ~evaluation)
+
+
+def test_adaptive_pilot_includes_response_null_training_cells():
+    coefficients = np.ones((8, 9))
+    training = np.ones(8, dtype=bool)
+    response_keep = np.ones_like(coefficients, dtype=bool)
+    response_keep[:, 4] = False
+    inference, evaluation = analysis_masks(training, response_keep)
+
+    baseline = training_data_pilot_log_psd(
+        coefficients,
+        inference,
+        n_time_profiles=2,
+        frequency_width=1,
+    )
+    changed = coefficients.copy()
+    changed[:, 4] = 1.0e3
+    changed_pilot = training_data_pilot_log_psd(
+        changed,
+        inference,
+        n_time_profiles=2,
+        frequency_width=1,
+    )
+
+    assert not np.allclose(baseline[:, 4], changed_pilot[:, 4])
+    assert not np.any(evaluation[:, 4])
 
 
 def test_training_pilot_does_not_use_excluded_values():

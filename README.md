@@ -40,8 +40,9 @@ likelihood and the bin pilot.
 
 ## Protocol and results
 
-- `ESA_M0_PUBLICATION_PROTOCOL.md` — frozen analysis protocol and claim boundary
-- `ESA_M0_RESULTS_AND_FINDINGS.md` — M0 results, what they do and do not support
+- `ESA_M0_PUBLICATION_PROTOCOL.md` — analysis protocol and claim boundary
+- `ESA_M0_RESULTS_AND_FINDINGS.md` — superseded pre-fix M0 results pending rerun
+- `COARSE_REFERENCE_OFFSET_CORRECTION.md` — likelihood correction and rerun plan
 - `ESA_M0_METHOD_IMPROVEMENTS.md` — method-tuning audit
 - `diagnostics/README.md` — every contested design choice, with the number that settled it
 

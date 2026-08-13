@@ -1,9 +1,21 @@
 # ESA-orbit LISA M0 PSD analysis: results and findings
 
-**Analysis status:** method frozen on one archived ESA-orbit X2 realization  
+**Analysis status:** superseded pending corrected coarse-reference reruns
 **Last updated:** 2026-08-13  
 **Scientific scope:** estimation of the total time-varying PSD (M0), without
 separating instrumental noise and the Galactic component
+
+> **Correction notice (2026-08-13):** the response-informed coarse likelihood
+> averaged `log(R)` and reused the geometric-mean reference in its quadratic
+> term. The correct sufficient statistic is `sum(w^2/R)`, with division by the
+> cell-level reference before block summation. The shared library is fixed and
+> the continuous and seven-day-gap anchors are being rerun. All numerical M0
+> results below document the superseded pre-fix analysis and must not be quoted
+> as current results. See
+> [`COARSE_REFERENCE_OFFSET_CORRECTION.md`](COARSE_REFERENCE_OFFSET_CORRECTION.md).
+> The pre-fix run also used the response-null mask in its likelihood. The
+> corrected rerun uses all frequency cells in retained training rows and
+> reserves the null mask for relative/log accuracy and notched whitening only.
 
 ## Technical summary
 
@@ -62,11 +74,11 @@ The figure uses three distinct comparisons:
 2. frequency-resolved log-PSD RMSE on response-retained test cells;
 3. held-out mean Whittle log-score gain from adding `h(t,f)` to `R exp(g)`.
 
-The response-null corridors are excluded from accuracy calculations because a
-smooth surface is not expected to hit moving transfer-function zeros exactly.
-This exclusion does not remove nulls from the inference without accounting for
-them: the retained-cell mask is fixed from the nominal orbit/TDI response and
-reported as part of the analysis contract.
+The response-null corridors are excluded from relative/log accuracy
+calculations because we do not expect to hit moving transfer-function zeros
+exactly. In the corrected analysis this is an evaluation choice only: null
+cells remain in the likelihood and adaptive-bin pilot, and all-cell held-out
+whitening supplies the stringent null-inclusive diagnostic.
 
 ### One WDM pixel is sufficient to protect gap boundaries
 
@@ -188,11 +200,12 @@ confirmation must use independently generated data.
 
 ### Coarse likelihood evaluation
 
-The continuous production analysis evaluates the block-summed likelihood over
+The superseded continuous analysis evaluated the block-summed likelihood over
 512 time bins and 623 adaptive frequency bins rather than every WDM cell
 individually. The bins are constructed from retained training coefficients
-only. Gaps, response-null cells, validation rows, test rows, and injected truth
-cannot enter the bin pilot.
+only. That run incorrectly excluded response-null cells from the bin pilot and
+likelihood. The corrected rerun includes them; gaps, validation rows, test rows,
+and injected truth still cannot enter.
 
 The numerical PSD scale is the median retained training WDM power divided by
 the median of `chi-square(1)`. This replaced an earlier truth-derived scale.
@@ -475,4 +488,3 @@ The main implementation and record are:
 Complete posterior surfaces are retained for the selected continuous fit and
 the seven-day gap anchor. Lower-budget sensitivity runs retain their JSON audit
 metrics without duplicating large posterior-surface archives.
-

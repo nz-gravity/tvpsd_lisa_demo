@@ -1,11 +1,12 @@
 # ESA-orbit M0 publication analysis protocol
 
-The consolidated reader-facing account of the completed analysis is
+The consolidated reader-facing account of the superseded pre-fix analysis is
 [`ESA_M0_RESULTS_AND_FINDINGS.md`](ESA_M0_RESULTS_AND_FINDINGS.md). This file
-retains the frozen prospective protocol and claim rules.
+retains the prospective protocol and claim rules for the corrected reruns.
 
-Status: method-tuning protocol on the existing realization. Independent noise
-realizations and an external LDC dataset remain final replication exercises.
+Status: corrected coarse-reference likelihood implemented; continuous and
+seven-day-gap production anchors pending rerun. Independent noise realizations
+and an external LDC dataset remain final replication exercises.
 
 ## Inputs available in a blind analysis
 
@@ -18,10 +19,14 @@ realizations and an external LDC dataset remain final replication exercises.
 ## Preprocessing and inference contract
 
 - Band: requested `1e-4`--`1e-1 Hz`; report the realized WDM cell centers.
-- Numerical scale: retained training WDM powers only.
-- Adaptive likelihood bins: retained training coefficients only.
-- Response-null mask: nominal orbit/TDI reference only, with threshold and
-  dilation fixed before final evaluation.
+- Numerical scale: all frequency cells in retained training rows only.
+- Adaptive likelihood bins: the same inference population, including
+  response-null cells; excluded time rows and injected truth cannot enter.
+- Inference mask: retained training rows only. The response-null mask never
+  removes a cell from the likelihood.
+- Evaluation mask: the nominal orbit/TDI response threshold and dilation are
+  used for stable relative/log truth accuracy and continuum whitening. Report
+  an additional all-cell held-out whitening check including the nulls.
 - Split: disjoint training, validation, and test time blocks. Once method
   tuning is complete on this realization, it is no longer an untouched final
   test; independent data supply the final confirmation.

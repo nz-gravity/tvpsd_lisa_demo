@@ -6,6 +6,9 @@
 noise2a/
 gb1/
 
+
+*.md 
+!README.md
 # Fit outputs, posterior surfaces, caches
 *.npz
 esa_m0_bincheck/

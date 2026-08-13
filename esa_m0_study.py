@@ -367,6 +367,28 @@ def analysis_row_split(
     return training, validation, test
 
 
+def analysis_masks(
+    training_rows: np.ndarray,
+    response_keep: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return distinct inference and response-notched evaluation masks.
+
+    Every frequency cell in a retained training row contributes to inference,
+    including cells near response nulls. ``response_keep`` is used only to
+    define cohorts where relative/log accuracy and continuum whitening are
+    well-conditioned; it must not alter the likelihood population or adaptive
+    bin pilot.
+    """
+    rows = np.asarray(training_rows, dtype=bool)
+    evaluation = np.asarray(response_keep, dtype=bool)
+    if rows.ndim != 1 or evaluation.ndim != 2 or evaluation.shape[0] != rows.size:
+        raise ValueError(
+            "training_rows must match the time dimension of response_keep"
+        )
+    inference = np.broadcast_to(rows[:, None], evaluation.shape).copy()
+    return inference, evaluation.copy()
+
+
 def training_data_pilot_log_psd(
     coefficients: np.ndarray,
     retained_training_mask: np.ndarray,
@@ -584,7 +606,20 @@ def _truth_cache_matches(cache: dict[str, np.ndarray], time_tcb: np.ndarray, fre
     )
 
 
+def _channel_truth(dataset: np.ndarray, channel: str) -> np.ndarray:
+    """Select one channel's PSD from an archived ``(X2, Y2, Z2)`` truth array.
+
+    AET channels rotate under the same zero-XYZ-cross-spectrum contract as
+    ``_channel_diagonal``: appropriate for this controlled archive, not a
+    physical multichannel response (see ``aet_diagonal.diagonal_xyz_psd_to_aet``).
+    """
+    if channel in XYZ_CHANNELS:
+        return dataset[XYZ_CHANNELS.index(channel)]
+    return diagonal_xyz_psd_to_aet(dataset)[AET_CHANNELS.index(channel)]
+
+
 def load_or_build_truth(
+    channel: str,
     cache_path: Path,
     archive_path: Path,
     orbit_path: Path,
@@ -593,7 +628,7 @@ def load_or_build_truth(
     *,
     frequency_chunk: int,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, float]]:
-    """Return direct instrumental and interpolated Galactic X2 truth."""
+    """Return direct instrumental and interpolated Galactic truth for one channel."""
     if cache_path.exists():
         with np.load(cache_path) as cache:
             arrays = {name: cache[name] for name in cache.files}
@@ -601,7 +636,8 @@ def load_or_build_truth(
             return arrays["noise_psd"], arrays["galactic_psd"], json.loads(str(arrays["validation_json"]))
 
     started = time.perf_counter()
-    noise = analytic_x2_noise_psd(
+    noise = analytic_channel_noise_psd(
+        channel,
         orbit_path,
         time_tcb,
         frequency_hz,
@@ -610,8 +646,8 @@ def load_or_build_truth(
     with h5py.File(archive_path, "r") as hdf:
         source_t = hdf["truth/time_tcb"][:]
         source_f = hdf["truth/frequency_hz"][:]
-        source_galactic = hdf["truth/galactic_psd"][0]
-        source_noise = hdf["truth/noise_psd"][0]
+        source_galactic = _channel_truth(hdf["truth/galactic_psd"][:], channel)
+        source_noise = _channel_truth(hdf["truth/noise_psd"][:], channel)
     galactic = interpolate_positive_surface(
         source_galactic,
         source_t,
@@ -619,7 +655,8 @@ def load_or_build_truth(
         time_tcb,
         frequency_hz,
     )
-    direct_on_archive = analytic_x2_noise_psd(
+    direct_on_archive = analytic_channel_noise_psd(
+        channel,
         orbit_path,
         source_t,
         source_f,
@@ -657,7 +694,7 @@ def _jsonify(value: Any) -> Any:
 
 
 def run(args: argparse.Namespace) -> Path:
-    """Execute one continuous or one gapped ESA-orbit X2 M0 fit."""
+    """Execute one continuous or one gapped ESA-orbit M0 fit for ``args.channel``."""
     if min(args.offset_oms_scale, args.offset_tm_scale, args.offset_pivot_hz) <= 0.0:
         raise ValueError("response-offset scales and pivot frequency must be positive")
     if args.single_gap_days <= 0.0 or args.gap_buffer_pixels < 0.0:
@@ -668,7 +705,11 @@ def run(args: argparse.Namespace) -> Path:
         t0_tcb = float(hdf.attrs["t0_tcb"])
         requested = int(hdf.attrs["n_samples"])
         n_total = wdm_valid_length(requested, args.nt)
-        clean_data = hdf["tdi/total"][0, :n_total]
+        if args.channel in XYZ_CHANNELS:
+            clean_data = hdf["tdi/total"][XYZ_CHANNELS.index(args.channel), :n_total]
+        else:
+            xyz_total = hdf["tdi/total"][:, :n_total]
+            clean_data = xyz_to_aet_series(xyz_total)[AET_CHANNELS.index(args.channel)]
         archive_attrs = {
             "noise_source": str(hdf.attrs["noise_source"]),
             "orbit_source": str(hdf.attrs["orbit_source"]),
@@ -726,8 +767,9 @@ def run(args: argparse.Namespace) -> Path:
             raise RuntimeError("clean and gapped WDM grids differ")
 
     time_tcb = t0_tcb + time_grid * t_obs_s
-    cache_name = f"esa_x2_truth_nt{args.nt}_{args.fmin:g}_{args.fmax:g}.npz"
+    cache_name = f"esa_{args.channel.lower()}_truth_nt{args.nt}_{args.fmin:g}_{args.fmax:g}.npz"
     noise_truth, galactic_truth, truth_validation = load_or_build_truth(
+        args.channel,
         args.output_dir / cache_name,
         args.archive,
         args.orbits,
@@ -741,7 +783,8 @@ def run(args: argparse.Namespace) -> Path:
     # coefficient realization. In this controlled simulation the nominal
     # parameters match the injection unless explicit misspecification factors
     # are supplied below.
-    response_oms, response_tm = analytic_x2_noise_components_psd(
+    response_oms, response_tm = analytic_channel_noise_components_psd(
+        args.channel,
         args.orbits,
         time_tcb,
         frequency_hz,
@@ -775,17 +818,19 @@ def run(args: argparse.Namespace) -> Path:
         test_fold=args.test_fold,
     )
     training_rows = good_rows & split_training
-    likelihood_mask = response_keep & training_rows[:, None]
-    if not np.any(likelihood_mask):
-        raise RuntimeError("likelihood mask retained no cells")
+    inference_mask, evaluation_mask = analysis_masks(training_rows, response_keep)
+    if not np.any(inference_mask):
+        raise RuntimeError("inference mask retained no cells")
+    if not np.all(inference_mask[training_rows]):
+        raise RuntimeError("inference unexpectedly excludes training frequency cells")
 
     to_psd = 2.0 * dt / n_total
-    data_scale = robust_training_psd_scale(coefficients, likelihood_mask, to_psd)
+    data_scale = robust_training_psd_scale(coefficients, inference_mask, to_psd)
     normalized_coefficients = coefficients * np.sqrt(to_psd / data_scale)
 
     pilot_log = training_data_pilot_log_psd(
         normalized_coefficients,
-        likelihood_mask,
+        inference_mask,
         n_time_profiles=args.pilot_time_profiles,
         frequency_width=args.pilot_frequency_width,
     )
@@ -828,7 +873,7 @@ def run(args: argparse.Namespace) -> Path:
         progress_bar=not args.no_progress,
         time_bin_starts=time_starts,
         freq_bin_starts=freq_starts,
-        likelihood_mask=likelihood_mask,
+        likelihood_mask=inference_mask,
         log_psd_offset=response_log_offset,
         residual_structure=args.residual_structure,
         interaction_scale_prior=args.interaction_scale_prior,
@@ -850,7 +895,7 @@ def run(args: argparse.Namespace) -> Path:
         frequency_hz,
         config=config,
         interior_knots_freq=interior_frequency_knots,
-        likelihood_mask=likelihood_mask,
+        likelihood_mask=inference_mask,
         freq_bin_starts=freq_starts,
         log_psd_offset=response_log_offset,
         n_warmup=args.n_warmup,
@@ -875,12 +920,12 @@ def run(args: argparse.Namespace) -> Path:
     clean_power_psd = clean_coefficients**2 * to_psd
     stationary_empirical_frequency = masked_mean(
         power_psd,
-        likelihood_mask,
+        inference_mask,
         axis=0,
     )
-    ordinary_test = response_keep & test_rows[:, None] & good_rows[:, None]
-    ordinary_validation = response_keep & validation_rows[:, None] & good_rows[:, None]
-    gap_test = response_keep & (~good_rows)[:, None]
+    ordinary_test = evaluation_mask & test_rows[:, None] & good_rows[:, None]
+    ordinary_validation = evaluation_mask & validation_rows[:, None] & good_rows[:, None]
+    gap_test = evaluation_mask & (~good_rows)[:, None]
     bands = {
         "low": frequency_hz <= 0.003,
         "retained_full": np.ones(frequency_hz.size, dtype=bool),
@@ -972,6 +1017,29 @@ def run(args: argparse.Namespace) -> Path:
                     check["mean_whittle_log_score"] - reference_score
                 )
             blind_diagnostics[cohort_name][label] = model_checks
+        # The notched cohorts above support stable continuum summaries. This
+        # additional truth-free check includes response-null cells and is the
+        # stringent diagnostic of the actual inference population.
+        all_cell_mask = cohort_rows[:, None] & np.ones_like(evaluation_mask)
+        all_cell_checks = {
+            "reference_only": blind_whitening_diagnostics(
+                coefficients, offset_reference, all_cell_mask, to_psd
+            ),
+            "stationary_residual": blind_whitening_diagnostics(
+                coefficients, stationary_surface, all_cell_mask, to_psd
+            ),
+            "tv_residual": blind_whitening_diagnostics(
+                coefficients, estimate, all_cell_mask, to_psd
+            ),
+        }
+        all_cell_reference_score = all_cell_checks["reference_only"][
+            "mean_whittle_log_score"
+        ]
+        for check in all_cell_checks.values():
+            check["mean_log_score_gain_vs_reference"] = float(
+                check["mean_whittle_log_score"] - all_cell_reference_score
+            )
+        blind_diagnostics[f"{cohort_name}_all_cells"] = all_cell_checks
     if gaps:
         # Missing rows have no coefficients to whiten. Assess the first two
         # retained WDM rows on either side of every excluded/tapered region.
@@ -997,6 +1065,18 @@ def run(args: argparse.Namespace) -> Path:
                 ),
             }
         blind_diagnostics["adjacent_gap_row_count"] = int(adjacent_rows.sum())
+        adjacent_all_mask = adjacent_rows[:, None] & np.ones_like(evaluation_mask)
+        blind_diagnostics["adjacent_gap_all_cells"] = {
+            "reference_only": blind_whitening_diagnostics(
+                coefficients, offset_reference, adjacent_all_mask, to_psd
+            ),
+            "stationary_residual": blind_whitening_diagnostics(
+                coefficients, stationary_surface, adjacent_all_mask, to_psd
+            ),
+            "tv_residual": blind_whitening_diagnostics(
+                coefficients, estimate, adjacent_all_mask, to_psd
+            ),
+        }
 
     low_cell = response_keep & (frequency_hz[None, :] <= 0.003)
     truth_modulation = np.exp(masked_mean(np.log(total_truth), low_cell, axis=1))
@@ -1012,7 +1092,7 @@ def run(args: argparse.Namespace) -> Path:
         "archive": str(args.archive.resolve()),
         "orbits": str(args.orbits.resolve()),
         "archive_attrs": archive_attrs,
-        "channel": "X2",
+        "channel": args.channel,
         "dt_s": dt,
         "n_samples": n_total,
         "duration_days": t_obs_s / SECONDS_PER_DAY,
@@ -1024,7 +1104,17 @@ def run(args: argparse.Namespace) -> Path:
         "time_pixel_hours": t_obs_s / args.nt / 3600.0,
         "response_mask_fraction_full": float(1.0 - response_keep.mean()),
         "response_mask_fraction_high": float(1.0 - response_keep[:, frequency_hz >= args.null_min_frequency].mean()),
-        "training_cell_fraction": float(likelihood_mask.mean()),
+        "training_cell_fraction": float(inference_mask.mean()),
+        "inference_cell_fraction": float(inference_mask.mean()),
+        "inference_includes_response_null_cells": True,
+        "evaluation_response_notched_fraction": float(1.0 - evaluation_mask.mean()),
+        "mask_contract": {
+            "inference": "all frequency cells in retained training rows",
+            "adaptive_bin_pilot": "same inference mask; includes response-null cells",
+            "truth_accuracy": "response-notched validation/test/gap cohorts",
+            "blind_whitening_primary": "response-notched cohorts",
+            "blind_whitening_stress": "all held-out cells including response nulls",
+        },
         "validation_row_fraction": float(validation_rows.mean()),
         "test_row_fraction": float(test_rows.mean()),
         "split_contract": {
@@ -1159,7 +1249,7 @@ def run(args: argparse.Namespace) -> Path:
             )
     if args.residual_structure == "stationary_plus_interaction":
         tag += "_nested"
-    output_path = args.output_dir / f"esa_x2_m0_{tag}.npz"
+    output_path = args.output_dir / f"esa_{args.channel.lower()}_m0_{tag}.npz"
     if not args.summary_only:
         np.savez_compressed(
             output_path,
@@ -1178,7 +1268,9 @@ def run(args: argparse.Namespace) -> Path:
             heldout_rows=test_rows,
             validation_rows=validation_rows,
             test_rows=test_rows,
-            likelihood_mask=likelihood_mask,
+            likelihood_mask=inference_mask,
+            inference_mask=inference_mask,
+            evaluation_mask=evaluation_mask,
             stationary_psd=stationary_surface,
             stationary_empirical_psd=stationary_empirical_frequency,
             stationary_lower_psd=stationary_lower_surface,
@@ -1193,7 +1285,7 @@ def run(args: argparse.Namespace) -> Path:
     else:
         metrics["archive"] = None
         metrics["archive_policy"] = "summary_only"
-    json_path = args.output_dir / f"esa_x2_m0_{tag}.json"
+    json_path = args.output_dir / f"esa_{args.channel.lower()}_m0_{tag}.json"
     json_path.write_text(
         json.dumps(metrics, default=_jsonify, indent=2) + "\n",
         encoding="utf-8",
@@ -1211,6 +1303,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--single-gap-days", type=float, default=7.0)
     parser.add_argument("--single-gap-center-year", type=float, default=0.5)
     parser.add_argument("--gap-buffer-pixels", type=float, default=1.0)
+    parser.add_argument(
+        "--channel",
+        choices=ALL_CHANNELS,
+        default="X2",
+        help=(
+            "X2/Y2/Z2 read the archive directly; A/E/T are the orthogonal "
+            "rotation of X/Y/Z, applied to the time series before the WDM "
+            "transform, and (for truth/reference comparison only) to the "
+            "per-channel PSD under the zero-XYZ-cross-spectrum contract"
+        ),
+    )
     parser.add_argument("--archive", type=Path, default=DEFAULT_ARCHIVE)
     parser.add_argument("--orbits", type=Path, default=DEFAULT_ORBITS)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_RESULTS)

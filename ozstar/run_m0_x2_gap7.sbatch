@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=m0-x2
+#SBATCH --job-name=m0-x2-gap7
 #SBATCH --account=oz200
 #SBATCH --partition=milan
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=16G
 #SBATCH --time=01:00:00
-#SBATCH --output=/fred/oz200/avajpeyi/projects/WDM_PSD/tvpsd_lisa_demo/ozstar/logs/m0_x2_%j.log
+#SBATCH --output=/fred/oz200/avajpeyi/projects/WDM_PSD/tvpsd_lisa_demo/ozstar/logs/m0_x2_gap7_%j.log
 #
-# Corrected M0 rung 2, X2 channel, continuous. All scientific settings are
-# explicit: this does not rely on esa_m0_study.py defaults.
-#
-#   sbatch ozstar/run_m0_x2.sbatch
+# Corrected M0 rung 2, X2 channel, one seven-day gap and one WDM-pixel
+# exclusion at each edge. All scientific settings are explicit.
 set -euo pipefail
 
 BASE=/fred/oz200/avajpeyi/projects/WDM_PSD
@@ -30,10 +28,12 @@ python ozstar/preflight_m0.py --base "$BASE"
 
 python esa_m0_study.py \
     --channel X2 \
-    --mode continuous \
+    --mode gapped --gap-scenario single \
+    --single-gap-days 7 --single-gap-center-year 0.5 \
+    --gap-buffer-pixels 1 --taper-hours 1 \
     --archive "$LISA_DIR/combined_esa_xyz.h5" \
     --orbits "$LISA_DIR/noise2a/orbits.h5" \
-    --output-dir "results/m0_x2_corrected_${SLURM_JOB_ID}" \
+    --output-dir "results/m0_x2_gap7_corrected_${SLURM_JOB_ID}" \
     --fmin 1e-4 --fmax 1e-1 --nt 2048 \
     --time-knots 8 --frequency-knots 36 --frequency-knot-break 1e-2 \
     --time-bin 4 --split-cycle 7 --validation-fold 5 --test-fold 6 \

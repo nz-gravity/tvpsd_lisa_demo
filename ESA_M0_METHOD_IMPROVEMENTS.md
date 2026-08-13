@@ -1,8 +1,10 @@
 # ESA-orbit M0 method-improvement audit
 
 See [`ESA_M0_RESULTS_AND_FINDINGS.md`](ESA_M0_RESULTS_AND_FINDINGS.md) for the
-consolidated scientific results. This file remains the implementation and
-method-tuning audit trail.
+superseded pre-fix scientific results. The coarse reference-offset correction
+and rerun plan are recorded in
+[`COARSE_REFERENCE_OFFSET_CORRECTION.md`](COARSE_REFERENCE_OFFSET_CORRECTION.md).
+This file remains the implementation and method-tuning audit trail.
 
 This note separates changes that can be validated on the existing X2
 realization from studies that require newly generated independent data. It is
@@ -11,10 +13,11 @@ an analysis record, not manuscript text.
 ## Implemented on the existing realization
 
 1. **Truth-free adaptive likelihood bins.** Frequency bins are selected from
-   robust time-block medians of retained training-coefficient log power. Null,
-   validation, test, and gap-contaminated cells cannot enter the pilot.
+   robust time-block medians of training-coefficient log power. Response-null
+   training cells enter the corrected pilot and likelihood; validation, test,
+   and gap-contaminated rows cannot enter.
 2. **Matched stationary P-spline.** The stationary Bayesian comparator now uses
-   the same frequency knots, adaptive bins, response mask, training rows,
+   the same frequency knots, adaptive bins, inference population, training rows,
    coefficient units, smoothing-prior family, and sampler settings as the TV
    fit. When a reference PSD is supplied, the comparator uses the same reference
    and estimates only a frequency-dependent residual,
@@ -96,8 +99,10 @@ an analysis record, not manuscript text.
   the identical reference PSD; otherwise the stationarity comparison is
   confounded by different physical information.
 - Treat short pilot chains only as geometry or point-estimate diagnostics.
-- Continue excluding response-null corridors from all accuracy and coverage
-  calculations; report the excluded cell fraction and mask sensitivity.
+- Continue excluding response-null corridors from relative/log accuracy and
+  coverage calculations; report all-cell and notched whitening separately, the
+  excluded evaluation fraction, and mask sensitivity. Do not exclude nulls
+  from inference or the adaptive-bin pilot.
 
 ## Deferred until new independent data are generated
 
