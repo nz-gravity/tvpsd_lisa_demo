@@ -5,13 +5,14 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=16G
-#SBATCH --time=02:00:00
+#SBATCH --time=06:00:00
 #SBATCH --output=/fred/oz200/avajpeyi/projects/WDM_PSD/tvpsd_lisa_demo/ozstar/logs/m1_%j.log
 #
 # M1 (rung 3, component separation), joint over A/E/T, on M0's grid/protocol.
 # ~203s locally at nt=2048/sub-null-band with the likelihood preconditioner;
-# full 0.1 Hz band and 500/500 warmup/samples will take longer -- 2h is a
-# generous ceiling based on the ~2850s full-band run seen locally.
+# full 0.1 Hz band and 500/500 warmup/samples will take longer -- the
+# ~2850s full-band run seen locally undershot the cluster: job 15420119
+# ran the full 2h ceiling without finishing, so this ceiling is now 6h.
 #
 #   sbatch ozstar/run_m1.sbatch
 set -euo pipefail
@@ -33,11 +34,14 @@ export PYTHONPATH="$BASE/TVPsplinePSD${PYTHONPATH:+:$PYTHONPATH}"
 
 # M0-named, but the checks that matter here are shared: package provenance,
 # archive/orbit presence, and inference/evaluation mask separation.
-python ozstar/preflight_m0.py --base "$BASE"
+python -u ozstar/preflight_m0.py --base "$BASE"
 
 mkdir -p "$LISA_DIR/results"
-python run_aet_diagonal_pilot.py \
+# -u and the progress bar (default on; not passing --no-progress) mean NUTS
+# warmup/sampling progress streams into the log live instead of only
+# appearing once the run finishes.
+python -u run_aet_diagonal_pilot.py \
     --output "results/m1_aet_${SLURM_JOB_ID}.npz" \
     --surface-plot "results/m1_aet_${SLURM_JOB_ID}.png" \
     --parameter-plot "results/m1_aet_${SLURM_JOB_ID}_params.png" \
-    --warmup 500 --samples 500 --no-progress
+    --warmup 500 --samples 500
