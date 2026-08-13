@@ -34,10 +34,11 @@ session -- no `jax[cuda]` extra, no GPU-specific code path has been tried.
   `combined_esa_xyz.h5` + `noise2a/` + `gb1/` that `.gitignore` deliberately
   excludes from the repo.
 - `run_m1.sbatch` -- M1 (rung 3), joint A/E/T component separation.
-- `preflight_m0.py` -- verifies data, import provenance, and the corrected
-  cellwise reference-scaled coarse likelihood before an M0 job starts.
-- `run_m0_x2.sbatch` -- corrected response-informed continuous X2 M0 anchor.
-- `run_m0_x2_gap7.sbatch` -- corrected response-informed seven-day-gap X2 M0
+- `preflight_m0.py` -- verifies data, import provenance, the cellwise
+  reference-scaled coarse likelihood, and 16-node WDM response-projection
+  convergence on actual production-grid X2 nulls before an M0 job starts.
+- `run_m0_x2.sbatch` -- projected-reference continuous X2 M0 anchor.
+- `run_m0_x2_gap7.sbatch` -- projected-reference seven-day-gap X2 M0
   anchor with a one-WDM-pixel boundary buffer.
 
 ## M0 settings
@@ -45,14 +46,21 @@ session -- no `jax[cuda]` extra, no GPU-specific code path has been tried.
 The M0 scripts deliberately spell out all publication settings; they do not
 rely on runner defaults. Both use the full realized WDM band, 36 frequency
 knots, the five-time-knot `stationary_plus_interaction` residual around the
-analytic response reference, four 300+300 chains, and the locked split/null
-evaluation/binning settings. `PYTHONPATH` is pinned to the sibling `wdm_psd` checkout
+WDM-projected analytic response reference, four 500+500 chains, and the locked
+split/null evaluation/binning settings. `PYTHONPATH` is pinned to the sibling `wdm_psd` checkout
 so an older package installed elsewhere cannot silently run.
 
 All frequencies in retained training rows enter M0 inference and the adaptive
 bin pilot, including response-null cells. The response-null mask is used only
 for notched evaluation summaries; each run also records all-cell held-out
 whitening. The preflight enforces this separation.
+
+Every publication run also transforms the archived noise and Galactic time
+series independently and checks them against their projected component
+expectations. Held-out TV-versus-stationary comparison integrates over
+posterior draws and reports a paired block-bootstrap interval. The surface
+archive is accompanied by a chain-preserving archive with sampler fields and
+spline reconstruction bases.
 
 `esa_m0_study.py` now accepts X2/Y2/Z2/A/E/T, but the two production scripts in
 this directory intentionally rerun the documented X2 anchors first. A/E/T M0
@@ -70,10 +78,11 @@ The current ladder is:
 
 ## The no-gap paper run
 
-Six jobs, all submittable together; under an hour of wall clock.
+Six jobs, all submittable together; allow the requested two-hour M0 ceilings
+until the new posterior-predictive post-processing is timed on OzSTAR.
 
 ```bash
-sbatch ozstar/run_m0_x2.sbatch        # corrected X2 anchor (methods receipt)
+sbatch ozstar/run_m0_x2.sbatch        # projected X2 anchor (methods receipt)
 sbatch ozstar/run_m0.sbatch A ref     # rung 2
 sbatch ozstar/run_m0.sbatch E ref
 sbatch ozstar/run_m0.sbatch A free    # rung 1
@@ -97,8 +106,10 @@ excludes the validation/test rows from the likelihood without scoring them.
 
 ## Sizing
 
-Both jobs request 6 cores / 16 GB, matching the ~500% CPU observed locally.
-The superseded M0 run took 1185s wall (854s NUTS), 4 chains x 300+300.
+M0 jobs request 6 cores / 32 GB. The larger memory ceiling covers the
+chain-preserving archive, component transforms, and posterior-predictive
+post-processing in addition to the sampler. The superseded M0 run took 1185s
+wall (854s NUTS), 4 chains x 300+300; the publication scripts now use 500+500.
 M1 full-band 500/500: ~2850s locally after the likelihood preconditioner fix.
 Both request generous ceilings (1h / 2h) rather than tight ones for a first
 run; tighten once you have real OzSTAR timings.
@@ -113,5 +124,6 @@ python ozstar/preflight_m0.py --base /fred/oz200/avajpeyi/projects/WDM_PSD
 ```
 
 The batch scripts repeat the preflight automatically. A job stops before the
-full fit if it imports the wrong checkout, lacks an input dataset, or does not
-exercise the corrected coarse-reference branch.
+full fit if it imports the wrong checkout, lacks an input dataset, does not
+exercise the corrected coarse-reference branch, or fails the production-grid
+WDM projection convergence check.

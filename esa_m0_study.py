@@ -1,10 +1,10 @@
-"""Full-band M0 WDM/P-spline study for the archived ESA-orbit X2 data.
+"""Full-band M0 WDM/P-spline study for the archived ESA-orbit LISA data.
 
-The study keeps the requested 1e-4--1e-1 Hz domain visible.  A smooth log-PSD
-surface cannot represent the narrow, moving TDI zero-response cores, so those
-cells are identified from the directly evaluated ESA-orbit instrumental
-response and excluded from both the likelihood and performance scores.  They
-remain in saved surfaces as explicitly masked, prior-driven interpolation.
+The study keeps the requested 1e-4--1e-1 Hz domain visible. The analytic
+response and simulation truth are projected through the compact
+WDM frequency kernel before they enter inference or validation. Response-null
+cells remain in the likelihood; a separately recorded null mask is used only
+for stable relative-error and continuum-whitening summaries.
 
 Part A fits the uninterrupted X2 realization.  Part B applies LISA-like gaps
 and cosine tapers in the time domain before the WDM transform.  Both parts use
@@ -16,22 +16,27 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
+import platform
+import subprocess
 import sys
 import time
-from typing import Any
 import warnings
+from importlib import metadata as importlib_metadata
+from pathlib import Path
+from typing import Any
 
 import h5py
 import jax
-
-jax.config.update("jax_enable_x64", True)
 import numpy as np
-from backgrounds import noise as background_noise, tdi
+from backgrounds import noise as background_noise
+from backgrounds import tdi
 from lisaorbits import InterpolatedOrbits
 from numpyro.diagnostics import summary as numpyro_summary
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import binary_dilation, median_filter
+from scipy.special import logsumexp
+
+jax.config.update("jax_enable_x64", True)
 
 
 HERE = Path(__file__).resolve().parent
@@ -42,16 +47,17 @@ if str(PACKAGE_ROOT) not in sys.path:
 from tv_pspline_psd import (  # noqa: E402
     PSplineConfig,
     adaptive_frequency_bin_starts,
+    collapse_wdm_frequency_projection,
     fit_log_pspline_surface,
     run_stationary_psd_mcmc,
     wdm_analysis_coefficients,
+    wdm_frequency_projection_grid,
 )
 from tv_pspline_psd.lisa_aet import (  # noqa: E402
     diagonal_xyz_psd_to_aet,
     xyz_covariance_to_aet_diagonal,
     xyz_to_aet_series,
 )
-
 
 SECONDS_PER_DAY = 86_400.0
 SECONDS_PER_YEAR = 365.25 * SECONDS_PER_DAY
@@ -60,18 +66,31 @@ DEFAULT_ARCHIVE = HERE / "combined_esa_xyz.h5"
 DEFAULT_ORBITS = HERE / "noise2a" / "orbits.h5"
 DEFAULT_RESULTS = HERE / "esa_m0_results"
 CHI_SQUARE_ONE_MEDIAN = 0.4549364231195727
+WDM_PROJECTION_CACHE_VERSION = 1
 
 # The archive's "tdi/total", "truth/galactic_psd" and "truth/noise_psd"
 # datasets are stored as (X2, Y2, Z2) on their leading axis. A/E/T are not
-# stored -- they are the orthogonal rotation of X/Y/Z (see tv_pspline_psd.lisa_aet),
-# applied to the time series (for the fitted data) or to the per-channel PSD
-# under the zero-XYZ-cross-spectrum contract already used by the M1 pilot
-# (for truth/reference comparison only; see tv_pspline_psd.lisa_aet.s docstring for
-# why that is an approximation for a physical response, adequate for this
-# controlled archive).
+# stored -- they are the orthogonal rotation of X/Y/Z (see
+# tv_pspline_psd.lisa_aet), applied to the time series. Analytic A/E/T
+# instrumental references are obtained by rotating the full XYZ covariance;
+# only the archived Galactic point surface uses the archive's explicit
+# zero-XYZ-cross-spectrum generation contract.
 XYZ_CHANNELS = ("X2", "Y2", "Z2")
 AET_CHANNELS = ("A", "E", "T")
 ALL_CHANNELS = XYZ_CHANNELS + AET_CHANNELS
+
+
+def load_archive_channel_series(
+    hdf: h5py.File,
+    dataset: str,
+    channel: str,
+    n_samples: int,
+) -> np.ndarray:
+    """Read one XYZ channel or rotate the archived XYZ triplet to A/E/T."""
+    if channel in XYZ_CHANNELS:
+        return hdf[dataset][XYZ_CHANNELS.index(channel), :n_samples]
+    xyz = hdf[dataset][:, :n_samples]
+    return xyz_to_aet_series(xyz)[AET_CHANNELS.index(channel)]
 
 
 def wdm_valid_length(n_requested: int, nt: int) -> int:
@@ -136,14 +155,52 @@ def _channel_diagonal(covariance: np.ndarray, channel: str) -> np.ndarray:
     """Extract one channel's real auto-PSD from a ``(freq, time, 3, 3)`` XYZ
     covariance. XYZ channels read the matrix diagonal directly (frozen X2
     path: ``channel_index=0`` is byte-for-byte the prior hardcoded ``[...,0,0]``
-    index); AET channels rotate to A/E/T first under the zero-XYZ-cross-
-    spectrum contract, then take the diagonal.
+    index); AET channels rotate the full XYZ covariance before taking the
+    diagonal, preserving the analytic cross spectra.
     """
     if channel in XYZ_CHANNELS:
         index = XYZ_CHANNELS.index(channel)
         return np.asarray(covariance[..., index, index].real)
     index = AET_CHANNELS.index(channel)
     return xyz_covariance_to_aet_diagonal(covariance)[..., index]
+
+
+def _analytic_noise_components_for_frequencies(
+    channel: str,
+    orbits: InterpolatedOrbits,
+    time_tcb: np.ndarray,
+    frequency_hz: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Evaluate one bounded frequency block with a preloaded orbit model."""
+    oms = background_noise.AnalyticOMSNoiseModel(
+        frequency_hz,
+        time_tcb,
+        orbits,
+        tdi_tf_func=tdi.compute_tdi_tf,
+        gen="2.0",
+        oms_isi_carrier_asds=7.9e-12,
+        fs=0.5,
+        duration=SECONDS_PER_YEAR,
+    )
+    test_mass = background_noise.AnalyticTMNoiseModel(
+        frequency_hz,
+        time_tcb,
+        orbits,
+        tdi_tf_func=tdi.compute_tdi_tf_tm,
+        gen="2.0",
+        tm_isi_carrier_asds=2.4e-15,
+        fs=0.5,
+        duration=SECONDS_PER_YEAR,
+    )
+    oms_psd = (
+        _channel_diagonal(oms.compute_covariances(0.0), channel).T
+        * CARRIER_FREQUENCY_HZ**2
+    )
+    tm_psd = (
+        _channel_diagonal(test_mass.compute_covariances(0.0), channel).T
+        * CARRIER_FREQUENCY_HZ**2
+    )
+    return oms_psd, tm_psd
 
 
 def analytic_channel_noise_components_psd(
@@ -169,34 +226,72 @@ def analytic_channel_noise_components_psd(
     tm_result = np.empty((time_tcb.size, frequency_hz.size), dtype=float)
     for start in range(0, frequency_hz.size, frequency_chunk):
         stop = min(start + frequency_chunk, frequency_hz.size)
-        frequencies = frequency_hz[start:stop]
-        oms = background_noise.AnalyticOMSNoiseModel(
-            frequencies,
-            time_tcb,
+        oms_block, tm_block = _analytic_noise_components_for_frequencies(
+            channel,
             orbits,
-            tdi_tf_func=tdi.compute_tdi_tf,
-            gen="2.0",
-            oms_isi_carrier_asds=7.9e-12,
-            fs=0.5,
-            duration=SECONDS_PER_YEAR,
-        )
-        test_mass = background_noise.AnalyticTMNoiseModel(
-            frequencies,
             time_tcb,
+            frequency_hz[start:stop],
+        )
+        oms_result[:, start:stop] = oms_block
+        tm_result[:, start:stop] = tm_block
+    return oms_result, tm_result
+
+
+def projected_analytic_channel_noise_components_psd(
+    channel: str,
+    orbit_path: Path,
+    time_tcb: np.ndarray,
+    frequency_hz: np.ndarray,
+    delta_f_hz: float,
+    *,
+    projection_nodes: int = 16,
+    frequency_chunk: int = 384,
+    spectral_tilt: float = 0.0,
+    pivot_hz: float = 1.0e-2,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Project analytic OMS and TM spectra onto interior WDM cells.
+
+    The response is evaluated inside the exact compact support of each WDM
+    frequency atom and collapsed with the squared Meyer-window weights. Work
+    is chunked by the total number of quadrature frequencies, bounding the
+    temporary covariance tensors on year-long grids.
+    """
+    if channel not in ALL_CHANNELS:
+        raise ValueError(f"channel must be one of {ALL_CHANNELS}, got {channel!r}")
+    if frequency_chunk < projection_nodes:
+        raise ValueError("frequency_chunk must be at least projection_nodes")
+    if pivot_hz <= 0.0:
+        raise ValueError("pivot_hz must be positive")
+    time_tcb = np.asarray(time_tcb, dtype=float)
+    frequency_hz = np.asarray(frequency_hz, dtype=float)
+    projection_grid, weights = wdm_frequency_projection_grid(
+        frequency_hz,
+        delta_f_hz,
+        n_nodes=projection_nodes,
+    )
+    orbits = load_esa_orbits(orbit_path)
+    oms_result = np.empty((time_tcb.size, frequency_hz.size), dtype=float)
+    tm_result = np.empty_like(oms_result)
+    centers_per_chunk = max(1, int(frequency_chunk) // int(projection_nodes))
+    for start in range(0, frequency_hz.size, centers_per_chunk):
+        stop = min(start + centers_per_chunk, frequency_hz.size)
+        sample_frequency = projection_grid[start:stop].reshape(-1)
+        oms_sample, tm_sample = _analytic_noise_components_for_frequencies(
+            channel,
             orbits,
-            tdi_tf_func=tdi.compute_tdi_tf_tm,
-            gen="2.0",
-            tm_isi_carrier_asds=2.4e-15,
-            fs=0.5,
-            duration=SECONDS_PER_YEAR,
+            time_tcb,
+            sample_frequency,
         )
-        oms_result[:, start:stop] = (
-            _channel_diagonal(oms.compute_covariances(0.0), channel).T
-            * CARRIER_FREQUENCY_HZ**2
+        shape = (time_tcb.size, stop - start, projection_nodes)
+        if spectral_tilt != 0.0:
+            multiplier = (sample_frequency / pivot_hz) ** spectral_tilt
+            oms_sample *= multiplier[None, :]
+            tm_sample *= multiplier[None, :]
+        oms_result[:, start:stop] = collapse_wdm_frequency_projection(
+            oms_sample.reshape(shape), weights
         )
-        tm_result[:, start:stop] = (
-            _channel_diagonal(test_mass.compute_covariances(0.0), channel).T
-            * CARRIER_FREQUENCY_HZ**2
+        tm_result[:, start:stop] = collapse_wdm_frequency_projection(
+            tm_sample.reshape(shape), weights
         )
     return oms_result, tm_result
 
@@ -242,6 +337,66 @@ def interpolate_positive_surface(
     tm, fm = np.meshgrid(target_time, np.log(target_frequency), indexing="ij")
     points = np.column_stack((tm.ravel(), fm.ravel()))
     return np.exp(interpolator(points).reshape(tm.shape))
+
+
+def projected_interpolated_positive_surface(
+    source: np.ndarray,
+    source_time: np.ndarray,
+    source_frequency: np.ndarray,
+    target_time: np.ndarray,
+    target_frequency: np.ndarray,
+    delta_f_hz: float,
+    *,
+    projection_nodes: int = 16,
+    frequency_chunk: int = 384,
+    zero_outside_frequency: bool = False,
+) -> np.ndarray:
+    """Log-interpolate a model inside each WDM atom and project its power.
+
+    Set ``zero_outside_frequency`` when the source-generation contract is zero
+    beyond its tabulated band. This is used for the Galactic component, which
+    was generated only over 1e-4--1e-1 Hz; extrapolating its final positive
+    grid value into quadrature nodes beyond 0.1 Hz would add absent power.
+    """
+    if frequency_chunk < projection_nodes:
+        raise ValueError("frequency_chunk must be at least projection_nodes")
+    projection_grid, weights = wdm_frequency_projection_grid(
+        target_frequency,
+        delta_f_hz,
+        n_nodes=projection_nodes,
+    )
+    output = np.empty((len(target_time), len(target_frequency)), dtype=float)
+    centers_per_chunk = max(1, int(frequency_chunk) // int(projection_nodes))
+    for start in range(0, len(target_frequency), centers_per_chunk):
+        stop = min(start + centers_per_chunk, len(target_frequency))
+        sampled_frequency = projection_grid[start:stop].reshape(-1)
+        if zero_outside_frequency:
+            sampled = np.zeros((len(target_time), sampled_frequency.size), dtype=float)
+            inside = (
+                (sampled_frequency >= float(np.min(source_frequency)))
+                & (sampled_frequency <= float(np.max(source_frequency)))
+            )
+            if np.any(inside):
+                sampled[:, inside] = interpolate_positive_surface(
+                    source,
+                    source_time,
+                    source_frequency,
+                    target_time,
+                    sampled_frequency[inside],
+                )
+        else:
+            sampled = interpolate_positive_surface(
+                source,
+                source_time,
+                source_frequency,
+                target_time,
+                sampled_frequency,
+            )
+        output[:, start:stop] = collapse_wdm_frequency_projection(
+            sampled.reshape(len(target_time), stop - start, projection_nodes),
+            weights,
+        )
+    return output
 
 
 def response_null_mask(
@@ -494,6 +649,18 @@ def sampler_diagnostics(result: dict[str, Any], max_tree_depth: int) -> dict[str
     }
 
 
+def convergence_gate_status(diagnostics: dict[str, float]) -> dict[str, Any]:
+    """Apply the predeclared publication convergence thresholds."""
+    checks = {
+        "zero_divergences": diagnostics["divergences"] == 0,
+        "max_rhat_le_1.05": diagnostics["max_rhat"] <= 1.05,
+        "min_ess_ge_50": diagnostics["min_ess"] >= 50.0,
+        "tree_depth_saturation_le_0.05": diagnostics["tree_depth_saturation"] <= 0.05,
+        "min_ebfmi_ge_0.3": diagnostics["min_ebfmi"] >= 0.3,
+    }
+    return {"passed": bool(all(checks.values())), "checks": checks}
+
+
 def masked_mean(values: np.ndarray, mask: np.ndarray, axis: int | None = None) -> np.ndarray:
     """Mean with a boolean cell mask and NaN for empty reductions."""
     values = np.asarray(values, dtype=float)
@@ -599,10 +766,358 @@ def blind_whitening_diagnostics(
     }
 
 
-def _truth_cache_matches(cache: dict[str, np.ndarray], time_tcb: np.ndarray, frequency: np.ndarray) -> bool:
+def validate_archived_components_in_wdm(
+    archive_path: Path,
+    channel: str,
+    n_total: int,
+    dt: float,
+    nt: int,
+    config: PSplineConfig,
+    time_grid: np.ndarray,
+    frequency_hz: np.ndarray,
+    clean_total_coefficients: np.ndarray,
+    noise_truth: np.ndarray,
+    galactic_truth: np.ndarray,
+    point_noise_reference: np.ndarray,
+    response_keep: np.ndarray,
+    to_psd: float,
+) -> dict[str, Any]:
+    """Validate the generation components against their WDM-projected truth.
+
+    This uses the archived noise and Galactic time series, not the total data
+    used for inference. It is a pre-inference plumbing check and does not tune
+    the fit. The total/noise/Galactic WDM linearity residual catches channel
+    rotation, trimming, or archive-selection mistakes.
+    """
+    component_coefficients: dict[str, np.ndarray] = {}
+    with h5py.File(archive_path, "r") as hdf:
+        for name, dataset in (("noise", "tdi/noise"), ("galactic", "tdi/galactic")):
+            series = load_archive_channel_series(hdf, dataset, channel, n_total)
+            coefficients, component_time, component_frequency = wdm_analysis_coefficients(
+                series, dt, nt, config
+            )
+            if not (
+                np.array_equal(component_time, time_grid)
+                and np.array_equal(component_frequency, frequency_hz)
+            ):
+                raise RuntimeError(f"{name} component WDM grid differs from total grid")
+            component_coefficients[name] = coefficients
+
+    cohorts = {
+        "low": response_keep & (frequency_hz[None, :] <= 0.003),
+        "full_response_notched": response_keep,
+        "high_response_notched": response_keep
+        & (frequency_hz[None, :] >= 0.02),
+        "response_null_cells": ~response_keep,
+        "full_all_cells": np.ones_like(response_keep, dtype=bool),
+    }
+    truth_by_component = {"noise": noise_truth, "galactic": galactic_truth}
+    result: dict[str, Any] = {
+        "contract": (
+            "archived component time series transformed independently; compared "
+            "to WDM-frequency-kernel-projected component expectations"
+        ),
+        "uses_total_inference_data_for_tuning": False,
+        "components": {},
+    }
+    for name, coefficients in component_coefficients.items():
+        truth = np.asarray(truth_by_component[name], dtype=float)
+        power = coefficients**2 * to_psd
+        summaries: dict[str, Any] = {}
+        for cohort_name, cohort in cohorts.items():
+            selected = cohort & np.isfinite(truth) & (truth > 0.0)
+            # The Galactic component is generated only on its source band and
+            # can be vanishingly small at the upper boundary. Do not present a
+            # null-core Galactic ratio where numerical roundoff dominates.
+            if name == "galactic" and cohort_name == "response_null_cells":
+                continue
+            if not np.any(selected):
+                summaries[cohort_name] = {
+                    "n_cells": 0,
+                    "skipped": "cohort contains no finite positive truth cells",
+                }
+                continue
+            checks = blind_whitening_diagnostics(
+                coefficients,
+                truth,
+                selected,
+                to_psd,
+            )
+            checks["sum_power_over_sum_expectation"] = float(
+                np.sum(power[selected]) / np.sum(truth[selected])
+            )
+            summaries[cohort_name] = checks
+        result["components"][name] = summaries
+
+    null_cells = (~response_keep) & (point_noise_reference > 0.0)
+    noise_power = component_coefficients["noise"] ** 2 * to_psd
+    if np.any(null_cells):
+        result["point_vs_projected_null_check"] = {
+            "n_cells": int(null_cells.sum()),
+            "mean_z2_projected_reference": float(
+                np.mean(noise_power[null_cells] / noise_truth[null_cells])
+            ),
+            "mean_z2_point_reference": float(
+                np.mean(noise_power[null_cells] / point_noise_reference[null_cells])
+            ),
+            "interpretation": (
+                "projected should be near one; point evaluation is expected to "
+                "over-whiten at deep transfer-function zeros"
+            ),
+        }
+    reconstructed = component_coefficients["noise"] + component_coefficients["galactic"]
+    residual = clean_total_coefficients - reconstructed
+    scale = max(float(np.max(np.abs(clean_total_coefficients))), np.finfo(float).tiny)
+    result["wdm_linearity"] = {
+        "max_absolute_residual": float(np.max(np.abs(residual))),
+        "max_residual_over_max_total": float(np.max(np.abs(residual)) / scale),
+    }
+    return result
+
+
+def _residual_log_psd_draws(
+    fit: dict[str, Any],
+    time_indices: np.ndarray,
+    frequency_indices: np.ndarray,
+) -> np.ndarray:
+    """Reconstruct selected residual log-PSD draws without a full draw cube."""
+    rows = np.asarray(time_indices, dtype=int)
+    columns = np.asarray(frequency_indices, dtype=int)
+    samples = fit["samples"]
+    if fit["residual_structure"] == "stationary_plus_interaction":
+        basis_time = np.asarray(fit["basis_interaction_time"])[rows]
+        basis_frequency = np.asarray(fit["basis_nested_freq"])[columns]
+        n_time_eig = basis_time.shape[1]
+        n_frequency_eig = basis_frequency.shape[1]
+        g_samples = np.asarray(samples["g"]).reshape(-1, n_frequency_eig)
+        h_samples = np.asarray(samples["h"]).reshape(
+            -1, n_time_eig, n_frequency_eig
+        )
+        stationary = g_samples @ basis_frequency.T
+        interaction = np.einsum(
+            "ta,nab,fb->ntf",
+            basis_time,
+            h_samples,
+            basis_frequency,
+            optimize=True,
+        )
+        return stationary[:, None, :] + interaction
+
+    if not bool(fit["config"].centered):
+        raise ValueError("selected-draw reconstruction currently requires centered=True")
+    basis_time = (
+        np.asarray(fit["B_time"])[rows]
+        @ np.asarray(fit["whitened"]["U_time"])
+    )
+    basis_frequency = (
+        np.asarray(fit["B_freq"])[columns]
+        @ np.asarray(fit["whitened"]["U_freq"])
+    )
+    eig_samples = np.asarray(samples["s"]).reshape(
+        -1, basis_time.shape[1], basis_frequency.shape[1]
+    )
+    return np.einsum(
+        "ta,nab,fb->ntf",
+        basis_time,
+        eig_samples,
+        basis_frequency,
+        optimize=True,
+    )
+
+
+def low_band_modulation_posterior(
+    fit: dict[str, Any],
+    log_psd_offset: np.ndarray,
+    frequency_select: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Posterior interval for the geometric mean PSD in one frequency band."""
+    selected = np.flatnonzero(np.asarray(frequency_select, dtype=bool))
+    if selected.size == 0:
+        raise ValueError("frequency_select retains no channels")
+    offset = np.asarray(log_psd_offset, dtype=float)[:, selected].mean(axis=1)
+    if fit["residual_structure"] == "stationary_plus_interaction":
+        basis_time = np.asarray(fit["basis_interaction_time"])
+        basis_frequency_mean = np.asarray(fit["basis_nested_freq"])[selected].mean(axis=0)
+        n_time_eig = basis_time.shape[1]
+        n_frequency_eig = basis_frequency_mean.size
+        samples = fit["samples"]
+        g_samples = np.asarray(samples["g"]).reshape(-1, n_frequency_eig)
+        h_samples = np.asarray(samples["h"]).reshape(
+            -1, n_time_eig, n_frequency_eig
+        )
+        log_draws = (
+            offset[None, :]
+            + (g_samples @ basis_frequency_mean)[:, None]
+            + np.einsum(
+                "ta,nab,b->nt",
+                basis_time,
+                h_samples,
+                basis_frequency_mean,
+                optimize=True,
+            )
+        )
+    else:
+        if not bool(fit["config"].centered):
+            raise ValueError("modulation reconstruction currently requires centered=True")
+        basis_time = np.asarray(fit["B_time"]) @ np.asarray(
+            fit["whitened"]["U_time"]
+        )
+        basis_frequency_mean = (
+            np.asarray(fit["B_freq"])[selected]
+            @ np.asarray(fit["whitened"]["U_freq"])
+        ).mean(axis=0)
+        eig_samples = np.asarray(fit["samples"]["s"]).reshape(
+            -1, basis_time.shape[1], basis_frequency_mean.size
+        )
+        log_draws = offset[None, :] + np.einsum(
+            "ta,nab,b->nt",
+            basis_time,
+            eig_samples,
+            basis_frequency_mean,
+            optimize=True,
+        )
+    lower, median, upper = np.percentile(np.exp(log_draws), [5.0, 50.0, 95.0], axis=0)
+    return lower, median, upper
+
+
+def posterior_predictive_score_comparison(
+    normalized_coefficients: np.ndarray,
+    tv_fit: dict[str, Any],
+    stationary_fit: dict[str, Any],
+    log_psd_offset: np.ndarray,
+    cohort_rows: np.ndarray,
+    cohorts: dict[str, np.ndarray],
+    *,
+    row_block: int = 4,
+    frequency_chunk: int = 256,
+    bootstrap_replicates: int = 4000,
+    bootstrap_seed: int = 0,
+) -> dict[str, Any]:
+    """Compare posterior predictive Whittle scores on held-out row blocks.
+
+    Each model's pointwise score integrates over its training-conditioned
+    posterior draws with log-mean-exp. Uncertainty resamples complete held-out
+    time blocks, preserving the cohort's intended clustering unit.
+    """
+    coefficients = np.asarray(normalized_coefficients, dtype=float)
+    rows = np.asarray(cohort_rows, dtype=bool)
+    offset = np.asarray(log_psd_offset, dtype=float)
+    if coefficients.shape != offset.shape or rows.shape != (coefficients.shape[0],):
+        raise ValueError("cohort rows and log offset must match coefficients")
+    if row_block < 1 or frequency_chunk < 1 or bootstrap_replicates < 1:
+        raise ValueError("block, chunk, and bootstrap counts must be positive")
+    cohort_masks = {name: np.asarray(mask, dtype=bool) for name, mask in cohorts.items()}
+    if any(mask.shape != coefficients.shape for mask in cohort_masks.values()):
+        raise ValueError("every cohort mask must match coefficients")
+
+    selected_rows = np.flatnonzero(rows)
+    if selected_rows.size == 0:
+        raise ValueError("cohort_rows retains no rows")
+    run_boundaries = np.flatnonzero(np.diff(selected_rows) > 1) + 1
+    runs = np.split(selected_rows, run_boundaries)
+    blocks = [
+        run[start : start + row_block]
+        for run in runs
+        for start in range(0, run.size, row_block)
+        if run[start : start + row_block].size
+    ]
+    block_values = {
+        name: {"tv": [], "stationary": [], "count": []}
+        for name in cohort_masks
+    }
+    stationary_residual = np.asarray(stationary_fit["residual_log_psd_samples"])
+    n_tv_draws = int(np.asarray(next(iter(tv_fit["samples"].values()))).shape[0])
+    n_stationary_draws = int(stationary_residual.shape[0])
+
+    for block_rows in blocks:
+        totals = {
+            name: {"tv": 0.0, "stationary": 0.0, "count": 0}
+            for name in cohort_masks
+        }
+        for start in range(0, coefficients.shape[1], frequency_chunk):
+            stop = min(start + frequency_chunk, coefficients.shape[1])
+            columns = np.arange(start, stop)
+            tv_log_psd = (
+                offset[np.ix_(block_rows, columns)][None, :, :]
+                + _residual_log_psd_draws(tv_fit, block_rows, columns)
+            )
+            stationary_log_psd = (
+                offset[np.ix_(block_rows, columns)][None, :, :]
+                + stationary_residual[:, None, columns]
+            )
+            power = coefficients[np.ix_(block_rows, columns)] ** 2
+            tv_log_likelihood = -0.5 * (
+                tv_log_psd + power[None, :, :] * np.exp(np.clip(-tv_log_psd, -745.0, 700.0))
+            )
+            stationary_log_likelihood = -0.5 * (
+                stationary_log_psd
+                + power[None, :, :] * np.exp(np.clip(-stationary_log_psd, -745.0, 700.0))
+            )
+            tv_lpd = logsumexp(tv_log_likelihood, axis=0) - np.log(n_tv_draws)
+            stationary_lpd = (
+                logsumexp(stationary_log_likelihood, axis=0)
+                - np.log(n_stationary_draws)
+            )
+            for name, mask in cohort_masks.items():
+                selected = mask[np.ix_(block_rows, columns)]
+                totals[name]["tv"] += float(np.sum(tv_lpd[selected]))
+                totals[name]["stationary"] += float(np.sum(stationary_lpd[selected]))
+                totals[name]["count"] += int(selected.sum())
+        for name in cohort_masks:
+            if totals[name]["count"]:
+                for key in ("tv", "stationary", "count"):
+                    block_values[name][key].append(totals[name][key])
+
+    rng = np.random.default_rng(bootstrap_seed)
+    result: dict[str, Any] = {}
+    for name, values in block_values.items():
+        tv = np.asarray(values["tv"], dtype=float)
+        stationary = np.asarray(values["stationary"], dtype=float)
+        count = np.asarray(values["count"], dtype=float)
+        if count.size == 0:
+            raise ValueError(f"cohort {name!r} retains no held-out cells")
+        difference = tv - stationary
+        draws = np.empty(bootstrap_replicates, dtype=float)
+        for index in range(bootstrap_replicates):
+            sampled = rng.integers(0, count.size, size=count.size)
+            draws[index] = difference[sampled].sum() / count[sampled].sum()
+        result[name] = {
+            "n_blocks": int(count.size),
+            "n_cells": int(count.sum()),
+            "tv_mean_log_predictive_density": float(tv.sum() / count.sum()),
+            "stationary_mean_log_predictive_density": float(
+                stationary.sum() / count.sum()
+            ),
+            "tv_minus_stationary_mean": float(difference.sum() / count.sum()),
+            "tv_minus_stationary_block_bootstrap_p05": float(np.percentile(draws, 5.0)),
+            "tv_minus_stationary_block_bootstrap_median": float(np.percentile(draws, 50.0)),
+            "tv_minus_stationary_block_bootstrap_p95": float(np.percentile(draws, 95.0)),
+        }
+    return {
+        "estimator": "held-out posterior predictive Whittle log density",
+        "posterior_integration": "pointwise log-mean-exp over posterior draws",
+        "uncertainty": "paired nonparametric bootstrap of complete held-out time blocks",
+        "row_block": int(row_block),
+        "bootstrap_replicates": int(bootstrap_replicates),
+        "cohorts": result,
+    }
+
+
+def _truth_cache_matches(
+    cache: dict[str, np.ndarray],
+    time_tcb: np.ndarray,
+    frequency: np.ndarray,
+    delta_f_hz: float,
+    projection_nodes: int,
+) -> bool:
     return (
-        np.array_equal(cache["time_tcb"], time_tcb)
+        "projection_cache_version" in cache
+        and np.array_equal(cache["time_tcb"], time_tcb)
         and np.array_equal(cache["frequency_hz"], frequency)
+        and float(cache["delta_f_hz"]) == float(delta_f_hz)
+        and int(cache["projection_nodes"]) == int(projection_nodes)
+        and int(cache["projection_cache_version"])
+        == WDM_PROJECTION_CACHE_VERSION
     )
 
 
@@ -625,22 +1140,37 @@ def load_or_build_truth(
     orbit_path: Path,
     time_tcb: np.ndarray,
     frequency_hz: np.ndarray,
+    delta_f_hz: float,
     *,
     frequency_chunk: int,
-) -> tuple[np.ndarray, np.ndarray, dict[str, float]]:
-    """Return direct instrumental and interpolated Galactic truth for one channel."""
+    projection_nodes: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, float]]:
+    """Return WDM-projected OMS, TM, and Galactic truth for one channel."""
     if cache_path.exists():
         with np.load(cache_path) as cache:
             arrays = {name: cache[name] for name in cache.files}
-        if _truth_cache_matches(arrays, time_tcb, frequency_hz):
-            return arrays["noise_psd"], arrays["galactic_psd"], json.loads(str(arrays["validation_json"]))
+        if _truth_cache_matches(
+            arrays,
+            time_tcb,
+            frequency_hz,
+            delta_f_hz,
+            projection_nodes,
+        ):
+            return (
+                arrays["noise_oms_psd"],
+                arrays["noise_tm_psd"],
+                arrays["galactic_psd"],
+                json.loads(str(arrays["validation_json"])),
+            )
 
     started = time.perf_counter()
-    noise = analytic_channel_noise_psd(
+    noise_oms, noise_tm = projected_analytic_channel_noise_components_psd(
         channel,
         orbit_path,
         time_tcb,
         frequency_hz,
+        delta_f_hz,
+        projection_nodes=projection_nodes,
         frequency_chunk=frequency_chunk,
     )
     with h5py.File(archive_path, "r") as hdf:
@@ -648,12 +1178,16 @@ def load_or_build_truth(
         source_f = hdf["truth/frequency_hz"][:]
         source_galactic = _channel_truth(hdf["truth/galactic_psd"][:], channel)
         source_noise = _channel_truth(hdf["truth/noise_psd"][:], channel)
-    galactic = interpolate_positive_surface(
+    galactic = projected_interpolated_positive_surface(
         source_galactic,
         source_t,
         source_f,
         time_tcb,
         frequency_hz,
+        delta_f_hz,
+        projection_nodes=projection_nodes,
+        frequency_chunk=frequency_chunk,
+        zero_outside_frequency=True,
     )
     direct_on_archive = analytic_channel_noise_psd(
         channel,
@@ -670,17 +1204,25 @@ def load_or_build_truth(
         "archive_noise_max_abs_log_ratio": float(
             np.max(np.abs(np.log(direct_on_archive / source_noise)))
         ),
+        "estimand": "WDM frequency-kernel projected marginal power",
+        "projection_nodes": int(projection_nodes),
+        "delta_f_hz": float(delta_f_hz),
+        "projection_cache_version": WDM_PROJECTION_CACHE_VERSION,
     }
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         cache_path,
         time_tcb=time_tcb,
         frequency_hz=frequency_hz,
-        noise_psd=noise,
+        delta_f_hz=np.asarray(delta_f_hz),
+        projection_nodes=np.asarray(projection_nodes),
+        projection_cache_version=np.asarray(WDM_PROJECTION_CACHE_VERSION),
+        noise_oms_psd=noise_oms,
+        noise_tm_psd=noise_tm,
         galactic_psd=galactic,
         validation_json=np.asarray(json.dumps(validation)),
     )
-    return noise, galactic, validation
+    return noise_oms, noise_tm, galactic, validation
 
 
 def _jsonify(value: Any) -> Any:
@@ -691,6 +1233,100 @@ def _jsonify(value: Any) -> Any:
     if isinstance(value, np.ndarray):
         return value.tolist()
     raise TypeError(f"cannot JSON encode {type(value)}")
+
+
+def _git_receipt(path: Path) -> dict[str, Any]:
+    """Return a compact, non-mutating revision receipt for one checkout."""
+    result: dict[str, Any] = {"path": str(path.resolve())}
+    try:
+        head = subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "-C", str(path), "status", "--porcelain"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        result.update({"commit": head, "dirty": bool(dirty.strip())})
+    except (OSError, subprocess.CalledProcessError) as error:
+        result["unavailable"] = str(error)
+    return result
+
+
+def _file_receipt(path: Path) -> dict[str, Any]:
+    """Record stable path/size/mtime identity without hashing multi-GB inputs."""
+    stat = path.stat()
+    return {
+        "path": str(path.resolve()),
+        "size_bytes": int(stat.st_size),
+        "mtime_ns": int(stat.st_mtime_ns),
+    }
+
+
+def runtime_provenance(args: argparse.Namespace) -> dict[str, Any]:
+    """Software, checkout, command, and input receipt stored with every run."""
+    versions: dict[str, str] = {}
+    for distribution in (
+        "numpy",
+        "scipy",
+        "h5py",
+        "jax",
+        "jaxlib",
+        "numpyro",
+        "wdm-transform",
+    ):
+        try:
+            versions[distribution] = importlib_metadata.version(distribution)
+        except importlib_metadata.PackageNotFoundError:
+            versions[distribution] = "not-installed-as-distribution"
+    return {
+        "command": [sys.executable, *sys.argv],
+        "python": sys.version,
+        "platform": platform.platform(),
+        "software_versions": versions,
+        "study_checkout": _git_receipt(HERE),
+        "package_checkout": _git_receipt(PACKAGE_ROOT),
+        "inputs": {
+            "archive": _file_receipt(args.archive),
+            "orbits": _file_receipt(args.orbits),
+        },
+    }
+
+
+def save_chain_archive(
+    path: Path,
+    fit: dict[str, Any],
+    stationary_fit: dict[str, Any],
+) -> None:
+    """Save chain-preserving parameters and reconstruction bases."""
+    payload: dict[str, np.ndarray] = {}
+    for prefix, result in (("tv", fit), ("stationary", stationary_fit)):
+        grouped_samples = result["mcmc"].get_samples(group_by_chain=True)
+        grouped_extra = result["mcmc"].get_extra_fields(group_by_chain=True)
+        for name, values in grouped_samples.items():
+            payload[f"{prefix}_sample_{name}"] = np.asarray(values)
+        for name, values in grouped_extra.items():
+            payload[f"{prefix}_extra_{name}"] = np.asarray(values)
+    payload["frequency_hz"] = np.asarray(fit["freq_grid"])
+    payload["time_grid"] = np.asarray(fit["time_grid"])
+    if fit["residual_structure"] == "stationary_plus_interaction":
+        payload["tv_basis_time"] = np.asarray(fit["basis_interaction_time"])
+        payload["tv_basis_frequency"] = np.asarray(fit["basis_nested_freq"])
+    else:
+        payload["tv_basis_time"] = np.asarray(fit["B_time"]) @ np.asarray(
+            fit["whitened"]["U_time"]
+        )
+        payload["tv_basis_frequency"] = np.asarray(fit["B_freq"]) @ np.asarray(
+            fit["whitened"]["U_freq"]
+        )
+    payload["stationary_basis_frequency"] = np.asarray(
+        stationary_fit["basis_eig_freq"]
+    )
+    np.savez_compressed(path, **payload)
 
 
 def run(args: argparse.Namespace) -> Path:
@@ -767,32 +1403,38 @@ def run(args: argparse.Namespace) -> Path:
             raise RuntimeError("clean and gapped WDM grids differ")
 
     time_tcb = t0_tcb + time_grid * t_obs_s
-    cache_name = f"esa_{args.channel.lower()}_truth_nt{args.nt}_{args.fmin:g}_{args.fmax:g}.npz"
-    noise_truth, galactic_truth, truth_validation = load_or_build_truth(
+    cache_name = (
+        f"esa_{args.channel.lower()}_truth_nt{args.nt}_{args.fmin:g}_{args.fmax:g}"
+        f"_wprojv{WDM_PROJECTION_CACHE_VERSION}_n{args.wdm_projection_nodes}.npz"
+    )
+    noise_oms_truth, noise_tm_truth, galactic_truth, truth_validation = load_or_build_truth(
         args.channel,
         args.output_dir / cache_name,
         args.archive,
         args.orbits,
         time_tcb,
         frequency_hz,
+        df,
         frequency_chunk=args.truth_frequency_chunk,
+        projection_nodes=args.wdm_projection_nodes,
     )
+    noise_truth = noise_oms_truth + noise_tm_truth
     total_truth = noise_truth + galactic_truth
     # Construct the mask and optional offset from a separately evaluated
     # nominal response reference, never from the injected total surface or
     # coefficient realization. In this controlled simulation the nominal
     # parameters match the injection unless explicit misspecification factors
     # are supplied below.
-    response_oms, response_tm = analytic_channel_noise_components_psd(
+    response_oms_point, response_tm_point = analytic_channel_noise_components_psd(
         args.channel,
         args.orbits,
         time_tcb,
         frequency_hz,
         frequency_chunk=args.truth_frequency_chunk,
     )
-    nominal_response_reference = response_oms + response_tm
+    nominal_response_point = response_oms_point + response_tm_point
     response_keep, response_ratio, response_continuum = response_null_mask(
-        nominal_response_reference,
+        nominal_response_point,
         frequency_hz,
         high_frequency_hz=args.null_min_frequency,
         ratio_threshold=args.null_ratio_threshold,
@@ -825,6 +1467,24 @@ def run(args: argparse.Namespace) -> Path:
         raise RuntimeError("inference unexpectedly excludes training frequency cells")
 
     to_psd = 2.0 * dt / n_total
+    component_validation = None
+    if not args.skip_component_validation:
+        component_validation = validate_archived_components_in_wdm(
+            args.archive,
+            args.channel,
+            n_total,
+            dt,
+            args.nt,
+            config,
+            time_grid,
+            frequency_hz,
+            clean_coefficients,
+            noise_truth,
+            galactic_truth,
+            nominal_response_point,
+            response_keep,
+            to_psd,
+        )
     data_scale = robust_training_psd_scale(coefficients, inference_mask, to_psd)
     normalized_coefficients = coefficients * np.sqrt(to_psd / data_scale)
 
@@ -853,10 +1513,27 @@ def run(args: argparse.Namespace) -> Path:
     )
 
     started = time.perf_counter()
+    if args.offset_spectral_tilt == 0.0:
+        response_oms_projected = noise_oms_truth
+        response_tm_projected = noise_tm_truth
+    else:
+        response_oms_projected, response_tm_projected = (
+            projected_analytic_channel_noise_components_psd(
+                args.channel,
+                args.orbits,
+                time_tcb,
+                frequency_hz,
+                df,
+                projection_nodes=args.wdm_projection_nodes,
+                frequency_chunk=args.truth_frequency_chunk,
+                spectral_tilt=args.offset_spectral_tilt,
+                pivot_hz=args.offset_pivot_hz,
+            )
+        )
     offset_reference = (
-        args.offset_oms_scale * response_oms
-        + args.offset_tm_scale * response_tm
-    ) * (frequency_hz[None, :] / args.offset_pivot_hz) ** args.offset_spectral_tilt
+        args.offset_oms_scale * response_oms_projected
+        + args.offset_tm_scale * response_tm_projected
+    )
     response_log_offset = np.log(offset_reference / data_scale) if args.response_offset else None
     fit = fit_log_pspline_surface(
         normalized_coefficients[None, :, :],
@@ -1078,12 +1755,45 @@ def run(args: argparse.Namespace) -> Path:
             ),
         }
 
+    predictive_cohorts = {
+        "low_response_notched": response_keep
+        & (frequency_hz[None, :] <= 0.003),
+        "full_response_notched": response_keep.copy(),
+        "high_response_notched": response_keep
+        & (frequency_hz[None, :] >= args.null_min_frequency),
+        "full_all_cells": np.ones_like(response_keep, dtype=bool),
+    }
+    posterior_predictive_comparison = posterior_predictive_score_comparison(
+        normalized_coefficients,
+        fit,
+        stationary_fit,
+        np.asarray(fit["log_psd_offset"]),
+        test_rows & good_rows,
+        predictive_cohorts,
+        row_block=args.time_bin,
+        frequency_chunk=args.predictive_frequency_chunk,
+        bootstrap_replicates=args.score_bootstrap_replicates,
+        bootstrap_seed=args.random_seed + 20_000 + (args.gap_seed if gaps else 0),
+    )
+
     low_cell = response_keep & (frequency_hz[None, :] <= 0.003)
     truth_modulation = np.exp(masked_mean(np.log(total_truth), low_cell, axis=1))
     estimate_modulation = np.exp(masked_mean(np.log(estimate), low_cell, axis=1))
     stationary_modulation = np.exp(
         masked_mean(np.log(stationary_surface), low_cell, axis=1)
     )
+    (
+        estimate_modulation_lower,
+        estimate_modulation_median,
+        estimate_modulation_upper,
+    ) = low_band_modulation_posterior(
+        fit,
+        np.asarray(fit["log_psd_offset"]),
+        frequency_hz <= 0.003,
+    )
+    estimate_modulation_lower *= data_scale
+    estimate_modulation_median *= data_scale
+    estimate_modulation_upper *= data_scale
     diagnostics = sampler_diagnostics(fit, args.max_tree_depth)
     stationary_diagnostics = sampler_diagnostics(stationary_fit, args.max_tree_depth)
     metrics = {
@@ -1092,6 +1802,7 @@ def run(args: argparse.Namespace) -> Path:
         "archive": str(args.archive.resolve()),
         "orbits": str(args.orbits.resolve()),
         "archive_attrs": archive_attrs,
+        "runtime_provenance": runtime_provenance(args),
         "channel": args.channel,
         "dt_s": dt,
         "n_samples": n_total,
@@ -1101,6 +1812,14 @@ def run(args: argparse.Namespace) -> Path:
         "requested_frequency_hz": [args.fmin, args.fmax],
         "realized_frequency_hz": [float(frequency_hz[0]), float(frequency_hz[-1])],
         "frequency_spacing_hz": df,
+        "wdm_reference_projection": {
+            "applied": True,
+            "kernel": "squared compact-support Meyer frequency window",
+            "quadrature_nodes": args.wdm_projection_nodes,
+            "cache_version": WDM_PROJECTION_CACHE_VERSION,
+            "delta_f_hz": df,
+            "galactic_zero_outside_archive_frequency_band": True,
+        },
         "time_pixel_hours": t_obs_s / args.nt / 3600.0,
         "response_mask_fraction_full": float(1.0 - response_keep.mean()),
         "response_mask_fraction_high": float(1.0 - response_keep[:, frequency_hz >= args.null_min_frequency].mean()),
@@ -1138,7 +1857,7 @@ def run(args: argparse.Namespace) -> Path:
         "reference_psd_offset": {
             "applied": bool(args.response_offset),
             "reference": (
-                "nominal analytic ESA-orbit X2 instrumental reference PSD"
+                f"nominal analytic ESA-orbit {args.channel} instrumental reference PSD"
                 if args.response_offset
                 else None
             ),
@@ -1168,8 +1887,13 @@ def run(args: argparse.Namespace) -> Path:
             ),
         },
         "truth_validation": truth_validation,
+        "component_wdm_validation": component_validation,
         "sampler": diagnostics,
+        "sampler_convergence_gate": convergence_gate_status(diagnostics),
         "stationary_sampler": stationary_diagnostics,
+        "stationary_sampler_convergence_gate": convergence_gate_status(
+            stationary_diagnostics
+        ),
         "stationary_comparator": {
             "form": (
                 "log S(t,f) = log S_reference(t,f) + g(f)"
@@ -1226,8 +1950,18 @@ def run(args: argparse.Namespace) -> Path:
         },
         "fit_wall_s": wall_s,
         "nuts_runtime_s": float(fit["nuts_runtime_s"]),
+        "stationary_nuts_runtime_s": float(stationary_fit["nuts_runtime_s"]),
         "scores": scores,
+        "score_contract": {
+            "scores": "truth-based geometric-posterior-mean surface metrics",
+            "blind_diagnostics": "plug-in whitening and Whittle scores at posterior geometric means",
+            "posterior_predictive_comparison": (
+                "training-conditioned posterior predictive log density with paired "
+                "held-out-block uncertainty"
+            ),
+        },
         "blind_diagnostics": blind_diagnostics,
+        "posterior_predictive_comparison": posterior_predictive_comparison,
     }
 
     tag = "continuous" if not gaps else f"gapped_seed{args.gap_seed}"
@@ -1249,8 +1983,18 @@ def run(args: argparse.Namespace) -> Path:
             )
     if args.residual_structure == "stationary_plus_interaction":
         tag += "_nested"
+    tag += f"_wprojv{WDM_PROJECTION_CACHE_VERSION}_n{args.wdm_projection_nodes}"
     output_path = args.output_dir / f"esa_{args.channel.lower()}_m0_{tag}.npz"
+    chain_path = args.output_dir / f"esa_{args.channel.lower()}_m0_{tag}_chains.npz"
     if not args.summary_only:
+        metrics["artifacts"] = {
+            "surface_archive": str(output_path.resolve()),
+            "chain_archive": str(chain_path.resolve()),
+            "chain_archive_contract": (
+                "chain-preserving sampled sites, NUTS diagnostics, and spline "
+                "reconstruction bases"
+            ),
+        }
         np.savez_compressed(
             output_path,
             time_year=time_grid * t_obs_s / SECONDS_PER_YEAR,
@@ -1262,8 +2006,11 @@ def run(args: argparse.Namespace) -> Path:
             truth_psd=total_truth,
             noise_truth_psd=noise_truth,
             galactic_truth_psd=galactic_truth,
+            reference_psd=offset_reference,
+            point_reference_psd=nominal_response_point,
             response_keep=response_keep,
             response_ratio=response_ratio,
+            response_continuum_psd=response_continuum,
             good_rows=good_rows,
             heldout_rows=test_rows,
             validation_rows=validation_rows,
@@ -1277,11 +2024,17 @@ def run(args: argparse.Namespace) -> Path:
             stationary_upper_psd=stationary_upper_surface,
             truth_modulation=truth_modulation,
             estimate_modulation=estimate_modulation,
+            estimate_modulation_lower=estimate_modulation_lower,
+            estimate_modulation_median=estimate_modulation_median,
+            estimate_modulation_upper=estimate_modulation_upper,
             stationary_modulation=stationary_modulation,
+            time_bin_starts=time_starts,
+            frequency_bin_starts=freq_starts,
             clean_power_psd=clean_power_psd if gaps else np.empty((0, 0)),
             gap_schedule_s=np.asarray(gaps, dtype=float).reshape(-1, 2),
             metrics_json=np.asarray(json.dumps(metrics, default=_jsonify, indent=2)),
         )
+        save_chain_archive(chain_path, fit, stationary_fit)
     else:
         metrics["archive"] = None
         metrics["archive_policy"] = "summary_only"
@@ -1331,12 +2084,36 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pilot-frequency-width", type=int, default=31)
     parser.add_argument("--max-log-range", type=float, default=0.25)
     parser.add_argument("--max-frequency-bin", type=int, default=24)
+    parser.add_argument("--predictive-frequency-chunk", type=int, default=256)
+    parser.add_argument("--score-bootstrap-replicates", type=int, default=4000)
     parser.add_argument("--null-min-frequency", type=float, default=0.02)
     parser.add_argument("--null-ratio-threshold", type=float, default=0.35)
     parser.add_argument("--null-continuum-width", type=int, default=81)
     parser.add_argument("--null-dilation-bins", type=int, default=6)
     parser.add_argument("--taper-hours", type=float, default=1.0)
-    parser.add_argument("--truth-frequency-chunk", type=int, default=96)
+    parser.add_argument(
+        "--truth-frequency-chunk",
+        type=int,
+        default=384,
+        help=(
+            "Maximum total quadrature frequencies in one analytic-response "
+            "evaluation block."
+        ),
+    )
+    parser.add_argument(
+        "--wdm-projection-nodes",
+        type=int,
+        default=16,
+        help="Gauss-Legendre nodes used to project each interior WDM channel.",
+    )
+    parser.add_argument(
+        "--skip-component-validation",
+        action="store_true",
+        help=(
+            "Skip the independent archived noise/Galactic WDM projection check. "
+            "Publication runs should leave this enabled."
+        ),
+    )
     parser.add_argument("--n-warmup", type=int, default=300)
     parser.add_argument("--n-samples", type=int, default=300)
     parser.add_argument("--chains", type=int, default=2)

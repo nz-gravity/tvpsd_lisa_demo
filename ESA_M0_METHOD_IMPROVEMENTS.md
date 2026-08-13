@@ -26,13 +26,14 @@ an analysis record, not manuscript text.
 3. **Prospective split.** Seven-fold time blocks reserve separate validation
    and test folds. Both are excluded from the pilot and likelihood. The 48-knot
    free-surface specification was locked before inspecting the new test fold.
-4. **Reference-PSD residual model.** An optional nominal analytic X2
+4. **Reference-PSD residual model.** An optional nominal analytic channel
    instrumental PSD supplies a fixed log-PSD offset. Orbit ephemerides, the TDI
    convention, and transfer geometry are treated as known; the nominal OMS and
    test-mass noise spectra and levels are assumptions rather than consequences
    of knowing the response. The P-spline remains a smooth multiplicative
    residual, so the reference amplitude is not fixed. Null corridors remain
-   excluded. Controlled OMS/TM scale and spectral-tilt perturbations test
+   in inference and are excluded only from ill-conditioned relative/log
+   evaluation summaries. Controlled OMS/TM scale and spectral-tilt perturbations test
    sensitivity to an imperfect reference.
 5. **Gap and notch stress controls.** The runner supports response-threshold and
    dilation sensitivity, adjustable WDM-row buffers, and single contiguous gaps
@@ -48,6 +49,11 @@ an analysis record, not manuscript text.
    encoded structurally.
 
 ## Completed single-realization checks
+
+The numerical results below predate both the coarse-reference correction and
+the WDM-projected-reference correction. They remain useful as the
+method-selection audit but are superseded for manuscript reporting until the
+new production jobs finish.
 
 - The selected five-knot continuous fit passes every sampler gate: zero
   divergences, maximum R-hat 1.022, minimum ESS 168, no tree-depth saturation,
@@ -109,20 +115,28 @@ an analysis record, not manuscript text.
 1. Repeated-realization empirical coverage and sampling-variability estimates.
 2. Final untouched evaluation after any further method tuning.
 3. Channel replication in Y2/Z2 or a physically complete multichannel study.
-## WDM projection question: closed for the present grids
+## WDM projection question: corrected for the M0 grid
 
 `wdm_psd/notes/WDM_PROJECTION_VALIDITY.md` directly measures the installed
 transform. Its Meyer frequency kernel is compactly supported within
 `|f-f_m| <= 2 df / 3`, with only `3.3e-23` of power outside that support. There
 is therefore no long-range leakage path from a response-null cell to a distant
-continuum at any dynamic range. End-to-end simulations are unbiased in nulls.
+continuum at any dynamic range. That structural result remains valid. It does
+not eliminate local curvature inside the compact support.
 
-For the present `nt=2048` X2 analysis, only the local curvature approximation
-remains: the note scales the measured `nt=32` error to roughly 0.2% at the
-coarser grid. This is below the current statistical and model errors and is not
-a blocker. Re-open the check only for the note's stated conditions: still
-larger `nt`, the lowest few channels, features narrower than `df`, or a changed
-Meyer-window parameter `a`.
+The earlier `nt=32` to `nt=2048` scaling contained an arithmetic error:
+`6.1e-5 * 64^2` is about 0.25 (25%), not 0.2%. Direct checks on production-grid
+X2 nulls find projected/point response ratios up to `3.58e3`. The replacement
+16-node projection agrees with 32 nodes to `2.18e-4` there. Analytic OMS/TM
+references and simulation truths are now projected through the squared Meyer
+frequency kernel; point response remains only for defining diagnostic null
+corridors. The Galactic projection honors its zero-outside-generation-band
+contract.
+
+Publication reruns also save an independent WDM check of the archived noise
+and Galactic component series, posterior-predictive TV-versus-stationary scores
+with paired held-out-block bootstrap intervals, low-band modulation posterior
+bands, chain-preserving sampler archives, and runtime/revision receipts.
 
 ## Locked model hierarchy for blind use
 

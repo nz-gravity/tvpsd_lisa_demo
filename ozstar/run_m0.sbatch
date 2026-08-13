@@ -4,8 +4,8 @@
 #SBATCH --partition=milan
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
-#SBATCH --mem=16G
-#SBATCH --time=01:00:00
+#SBATCH --mem=32G
+#SBATCH --time=02:00:00
 #SBATCH --output=/fred/oz200/avajpeyi/projects/WDM_PSD/tvpsd_lisa_demo/ozstar/logs/m0_%j.log
 #
 # M0 for the paper's ladder rungs 1 and 2, on one channel.
@@ -18,8 +18,7 @@
 #
 # Every scientific setting is spelled out here and shared by both rungs except
 # the three lines that define the rung itself, so the two fits differ only in
-# what they assume. run_m0_x2.sbatch is the frozen corrected X2 anchor and is
-# deliberately NOT replaced by this script.
+# what they assume. run_m0_x2.sbatch remains the explicit X2 methods anchor.
 #
 # NOTE ON TIME FLEXIBILITY. In the nested (ref) rung the total surface's time
 # dependence comes solely from the five-knot zero-time-mean interaction basis;
@@ -76,8 +75,10 @@ python esa_m0_study.py \
     --time-bin 4 --split-cycle 7 --validation-fold 5 --test-fold 6 \
     --pilot-time-profiles 32 --pilot-frequency-width 31 \
     --max-log-range 0.25 --max-frequency-bin 24 \
+    --wdm-projection-nodes 16 --truth-frequency-chunk 384 \
+    --predictive-frequency-chunk 256 --score-bootstrap-replicates 4000 \
     --null-min-frequency 0.02 --null-ratio-threshold 0.35 \
     --null-continuum-width 81 --null-dilation-bins 6 \
     "${RUNG_ARGS[@]}" \
-    --n-warmup 300 --n-samples 300 --chains 4 \
+    --n-warmup 500 --n-samples 500 --chains 4 \
     --max-tree-depth 12 --target-accept 0.95 --no-progress

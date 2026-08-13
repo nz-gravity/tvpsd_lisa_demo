@@ -1,6 +1,8 @@
 # Inputs and outputs are large (~12 GB) and reproducible from the scripts.
 # Track code, docs and protocol only.
 
+results/
+
 # Archives and simulation inputs
 *.h5
 noise2a/

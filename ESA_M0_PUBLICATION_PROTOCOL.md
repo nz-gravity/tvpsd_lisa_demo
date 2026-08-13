@@ -4,9 +4,10 @@ The consolidated reader-facing account of the superseded pre-fix analysis is
 [`ESA_M0_RESULTS_AND_FINDINGS.md`](ESA_M0_RESULTS_AND_FINDINGS.md). This file
 retains the prospective protocol and claim rules for the corrected reruns.
 
-Status: corrected coarse-reference likelihood implemented; continuous and
-seven-day-gap production anchors pending rerun. Independent noise realizations
-and an external LDC dataset remain final replication exercises.
+Status: corrected coarse-reference likelihood and WDM-projected references
+implemented; continuous and seven-day-gap production anchors pending rerun.
+Independent noise realizations and an external LDC dataset remain final
+replication exercises.
 
 ## Inputs available in a blind analysis
 
@@ -27,6 +28,9 @@ and an external LDC dataset remain final replication exercises.
 - Evaluation mask: the nominal orbit/TDI response threshold and dilation are
   used for stable relative/log truth accuracy and continuum whitening. Report
   an additional all-cell held-out whitening check including the nulls.
+- Estimand: analytic OMS/TM references and injected truth are integrated over
+  the compact squared Meyer frequency kernel for each interior WDM cell.
+  Point-evaluated response is used only to define diagnostic null corridors.
 - Split: disjoint training, validation, and test time blocks. Once method
   tuning is complete on this realization, it is no longer an untouched final
   test; independent data supply the final confirmation.
@@ -43,7 +47,9 @@ and an external LDC dataset remain final replication exercises.
 
 ## Primary blind metrics
 
-- Held-out mean Whittle log score and score gain relative to `R`.
+- Held-out posterior-predictive Whittle log density for TV versus stationary,
+  integrated over posterior draws with paired complete-time-block bootstrap
+  uncertainty. Plug-in geometric-mean scores remain secondary diagnostics.
 - Held-out `mean(z)`, `mean(z^2)`, median `z^2 / median(chi2_1)`, and central
   90% fraction for `z=w/sqrt(S)`.
 - Lag-one time and frequency products of held-out whitened coefficients.
@@ -71,13 +77,14 @@ and an external LDC dataset remain final replication exercises.
 - response-null threshold and dilation;
 - gap duration and WDM-row buffer.
 
-These checks are complete for method freezing. Five interaction time knots and
-a one-pixel gap-edge buffer are selected. Prior/reference perturbations and the
-one-/thirty-day gap runs that do not pass production sampler gates are retained
-as point-estimate stress tests only. The fully sampled continuous and seven-day
-gap anchor fits pass all gates.
+These checks selected five interaction time knots and
+a one-pixel gap-edge buffer. Prior/reference perturbations and the one-/thirty-
+day gap runs that do not pass production sampler gates are retained as
+point-estimate stress tests only. The prior anchors passed all gates, but their
+numerical results are superseded by the coarse-reference and WDM-projection
+corrections. Replacement runs must pass the same gates before manuscript use.
 
-## Claims supported on the present realization
+## Superseded claims to re-evaluate after rerun
 
 - The nested interaction materially improves held-out prediction below 3 mHz,
   gives a small full-band improvement, and gives no meaningful improvement in

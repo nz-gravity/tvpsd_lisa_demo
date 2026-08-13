@@ -1,4 +1,4 @@
-"""Fast OzSTAR preflight for the corrected coarse-reference M0 likelihood."""
+"""Fast OzSTAR preflight for projected-reference M0 publication runs."""
 
 from __future__ import annotations
 
@@ -20,7 +20,12 @@ if str(STUDY_ROOT) not in sys.path:
     sys.path.insert(0, str(STUDY_ROOT))
 
 import tv_pspline_psd  # noqa: E402
-from esa_m0_study import analysis_masks  # noqa: E402
+from esa_m0_study import (  # noqa: E402
+    analysis_masks,
+    analytic_channel_noise_psd,
+    projected_analytic_channel_noise_components_psd,
+    wdm_valid_length,
+)
 from tv_pspline_psd import PSplineConfig, fit_log_pspline_surface  # noqa: E402
 from tv_pspline_psd.inference import _reference_scaled_power  # noqa: E402
 
@@ -62,6 +67,9 @@ def main() -> None:
         for key in ("tdi/total", "truth/noise_psd", "truth/galactic_psd"):
             if key not in hdf:
                 raise RuntimeError(f"archive is missing {key}")
+        dt = float(hdf.attrs["dt_seconds"])
+        t0_tcb = float(hdf.attrs["t0_tcb"])
+        requested_samples = int(hdf.attrs["n_samples"])
 
     power = np.array([[2.0, 8.0, 18.0]])
     reference = np.array([[1.0e-8, 4.0, 9.0]])
@@ -123,10 +131,66 @@ def main() -> None:
     if handling != expected:
         raise RuntimeError(f"incorrect coarse-reference handling: {handling!r}")
 
+    # Check the actual production-grid response, not a synthetic polynomial.
+    # Sixteen quadrature nodes must agree with a doubled rule at the deepest
+    # sampled X2 nulls, while both must differ materially from point evaluation.
+    nt = 2048
+    n_total = wdm_valid_length(requested_samples, nt)
+    nf = n_total // nt
+    delta_f = 1.0 / (2.0 * nf * dt)
+    duration = n_total * dt
+    check_times = t0_tcb + duration * np.array([0.15, 0.50, 0.85])
+    check_frequency = (
+        np.arange(np.ceil(0.02 / delta_f), np.floor(0.1 / delta_f) + 1)
+        * delta_f
+    )
+    point_grid = analytic_channel_noise_psd(
+        "X2", orbits, check_times, check_frequency, frequency_chunk=384
+    )
+    deepest_indices = np.argmin(point_grid, axis=1)
+    deepest_frequency = check_frequency[deepest_indices]
+    point_at_null = point_grid[np.arange(check_times.size), deepest_indices]
+    projected: dict[int, np.ndarray] = {}
+    for nodes in (16, 32):
+        values = []
+        for time_tcb, frequency_hz in zip(
+            check_times, deepest_frequency, strict=True
+        ):
+            oms, tm = projected_analytic_channel_noise_components_psd(
+                "X2",
+                orbits,
+                np.array([time_tcb]),
+                np.array([frequency_hz]),
+                delta_f,
+                projection_nodes=nodes,
+                frequency_chunk=384,
+            )
+            values.append(float(oms[0, 0] + tm[0, 0]))
+        projected[nodes] = np.asarray(values)
+    projection_relative_change = np.abs(projected[16] / projected[32] - 1.0)
+    if np.max(projection_relative_change) > 5.0e-4:
+        raise RuntimeError(
+            "16-node WDM projection failed convergence check: "
+            f"max relative change={np.max(projection_relative_change):.3g}"
+        )
+    point_ratio = projected[16] / point_at_null
+    if np.max(point_ratio) < 10.0:
+        raise RuntimeError(
+            "production-grid preflight did not resolve a point-evaluation null"
+        )
+
     print(f"[preflight passed] package={imported}")
     print(f"[preflight passed] archive={archive}")
     print(f"[preflight passed] reference_handling={handling}")
     print("[preflight passed] inference includes response-null training cells")
+    print(
+        "[preflight passed] 16-vs-32 node projection max relative change="
+        f"{np.max(projection_relative_change):.3g}"
+    )
+    print(
+        "[preflight passed] projected/point response at deepest checked null="
+        f"{np.max(point_ratio):.3g}"
+    )
 
 
 if __name__ == "__main__":

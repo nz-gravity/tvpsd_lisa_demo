@@ -4,8 +4,8 @@
 #SBATCH --partition=milan
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
-#SBATCH --mem=16G
-#SBATCH --time=01:00:00
+#SBATCH --mem=32G
+#SBATCH --time=02:00:00
 #SBATCH --output=/fred/oz200/avajpeyi/projects/WDM_PSD/tvpsd_lisa_demo/ozstar/logs/m0_x2_gap7_%j.log
 #
 # Corrected M0 rung 2, X2 channel, one seven-day gap and one WDM-pixel
@@ -33,16 +33,18 @@ python esa_m0_study.py \
     --gap-buffer-pixels 1 --taper-hours 1 \
     --archive "$LISA_DIR/combined_esa_xyz.h5" \
     --orbits "$LISA_DIR/noise2a/orbits.h5" \
-    --output-dir "results/m0_x2_gap7_corrected_${SLURM_JOB_ID}" \
+    --output-dir "results/m0_x2_gap7_projected_${SLURM_JOB_ID}" \
     --fmin 1e-4 --fmax 1e-1 --nt 2048 \
     --time-knots 8 --frequency-knots 36 --frequency-knot-break 1e-2 \
     --time-bin 4 --split-cycle 7 --validation-fold 5 --test-fold 6 \
     --pilot-time-profiles 32 --pilot-frequency-width 31 \
     --max-log-range 0.25 --max-frequency-bin 24 \
+    --wdm-projection-nodes 16 --truth-frequency-chunk 384 \
+    --predictive-frequency-chunk 256 --score-bootstrap-replicates 4000 \
     --null-min-frequency 0.02 --null-ratio-threshold 0.35 \
     --null-continuum-width 81 --null-dilation-bins 6 \
     --reference-psd-offset \
     --residual-structure stationary_plus_interaction \
     --interaction-time-knots 5 --interaction-scale-prior 0.5 \
-    --n-warmup 300 --n-samples 300 --chains 4 \
+    --n-warmup 500 --n-samples 500 --chains 4 \
     --max-tree-depth 12 --target-accept 0.95 --no-progress
