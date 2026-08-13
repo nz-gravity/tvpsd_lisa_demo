@@ -22,7 +22,7 @@ cd "$LISA_DIR"
 
 export XLA_FLAGS="--xla_force_host_platform_device_count=1"
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
-export PYTHONPATH="$BASE/wdm_psd${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$BASE/TVPsplinePSD${PYTHONPATH:+:$PYTHONPATH}"
 
 python ozstar/preflight_m0.py --base "$BASE"
 

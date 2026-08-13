@@ -3,7 +3,9 @@
 set -euo pipefail
 
 BASE=/fred/oz200/avajpeyi/projects/WDM_PSD
-PACKAGE_DIR="$BASE/wdm_psd"
+# Matches the package's GitHub repo name (nz-gravity/TVPsplinePSD), and the
+# checkout already present on this account -- not a local renamed alias.
+PACKAGE_DIR="$BASE/TVPsplinePSD"
 LISA_DIR="$BASE/tvpsd_lisa_demo"
 
 mkdir -p "$BASE"

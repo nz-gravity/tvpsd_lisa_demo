@@ -44,7 +44,7 @@ def main() -> None:
     package_root = (
         args.package_root.resolve()
         if args.package_root is not None
-        else (base / "wdm_psd").resolve()
+        else (base / "TVPsplinePSD").resolve()
     )
 
     imported = Path(tv_pspline_psd.__file__).resolve()
