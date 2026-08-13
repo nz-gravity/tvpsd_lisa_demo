@@ -1,8 +1,11 @@
 # LISA ESA-orbit PSD analyses
 
-Analysis code for the ESA-orbit LISA study. The estimator itself lives in the
-sibling package `../wdm_psd/tv_pspline_psd`; this directory holds the study
-runners, protocol documents, and diagnostics.
+Analysis code for the ESA-orbit LISA study. The estimator itself -- including
+the AET rotation algebra (`tv_pspline_psd.lisa_aet`) and the multichannel
+physical-component model (`tv_pspline_psd.multichannel`) -- lives in the
+sibling package `../wdm_psd/tv_pspline_psd`. This directory holds only what is
+specific to this archive and this study: data generation, the M0/M1 study
+runners, OzSTAR job scripts, protocol documents, and diagnostics.
 
 ## The three-rung comparison
 
@@ -60,11 +63,6 @@ is the machine-readable record of the selected results.
 
 ## Known issues
 
-- **Duplicate preconditioner.** `aet_component_pspline_nuts.py` now contains
-  `component_noise_preconditioner` (used by `fit_aet_component_noise_nuts`), and
-  `aet_component_pspline_nuts_preconditioned.py` is a standalone module doing
-  the same thing. One should be retired; the in-place version is the live path.
-  `pilot_m1_preconditioner_check.py` compares them.
 - **Held-out folds are excluded but not yet scored.** The split removes
   validation/test rows from the M1 likelihood, but no held-out Whittle score is
   computed, so M1's reported numbers are still in-sample. M0 does score its

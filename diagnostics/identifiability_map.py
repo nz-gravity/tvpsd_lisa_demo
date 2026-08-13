@@ -25,7 +25,7 @@ from run_aet_diagonal_pilot import (
     oms_theory_psd,
     tm_theory_psd,
 )
-from aet_diagonal import diagonal_xyz_psd_to_aet
+from tv_pspline_psd.lisa_aet import diagonal_xyz_psd_to_aet
 
 HERE = "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation"
 with h5py.File(f"{HERE}/combined_esa_xyz.h5", "r") as hdf:

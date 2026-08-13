@@ -30,7 +30,7 @@ from run_aet_diagonal_pilot import (
     wdm_valid_length,
     armlength_ratio,
 )
-from aet_diagonal import AET_CHANNELS, xyz_covariance_to_aet_diagonal
+from tv_pspline_psd.lisa_aet import AET_CHANNELS, xyz_covariance_to_aet_diagonal
 from tv_pspline_psd import PSplineConfig, wdm_analysis_coefficients
 from tv_pspline_psd.inference import adaptive_frequency_bin_starts
 from tv_pspline_psd.model import whiten_penalty_pair, eigen_prior_scale

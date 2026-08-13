@@ -46,7 +46,7 @@ from tv_pspline_psd import (  # noqa: E402
     run_stationary_psd_mcmc,
     wdm_analysis_coefficients,
 )
-from aet_diagonal import (  # noqa: E402
+from tv_pspline_psd.lisa_aet import (  # noqa: E402
     diagonal_xyz_psd_to_aet,
     xyz_covariance_to_aet_diagonal,
     xyz_to_aet_series,
@@ -63,10 +63,10 @@ CHI_SQUARE_ONE_MEDIAN = 0.4549364231195727
 
 # The archive's "tdi/total", "truth/galactic_psd" and "truth/noise_psd"
 # datasets are stored as (X2, Y2, Z2) on their leading axis. A/E/T are not
-# stored -- they are the orthogonal rotation of X/Y/Z (see aet_diagonal.py),
+# stored -- they are the orthogonal rotation of X/Y/Z (see tv_pspline_psd.lisa_aet),
 # applied to the time series (for the fitted data) or to the per-channel PSD
 # under the zero-XYZ-cross-spectrum contract already used by the M1 pilot
-# (for truth/reference comparison only; see aet_diagonal.py's docstring for
+# (for truth/reference comparison only; see tv_pspline_psd.lisa_aet.s docstring for
 # why that is an approximation for a physical response, adequate for this
 # controlled archive).
 XYZ_CHANNELS = ("X2", "Y2", "Z2")
@@ -611,7 +611,7 @@ def _channel_truth(dataset: np.ndarray, channel: str) -> np.ndarray:
 
     AET channels rotate under the same zero-XYZ-cross-spectrum contract as
     ``_channel_diagonal``: appropriate for this controlled archive, not a
-    physical multichannel response (see ``aet_diagonal.diagonal_xyz_psd_to_aet``).
+    physical multichannel response (see ``tv_pspline_psd.lisa_aet.diagonal_xyz_psd_to_aet``).
     """
     if channel in XYZ_CHANNELS:
         return dataset[XYZ_CHANNELS.index(channel)]

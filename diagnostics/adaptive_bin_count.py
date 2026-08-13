@@ -7,7 +7,7 @@ from run_aet_diagonal_pilot import (
     wdm_valid_length, time_block_log_pilot, analytic_aet_noise_components_psd,
     interpolate_surface, aet_noise_transfer_functions, oms_theory_psd, tm_theory_psd,
 )
-from aet_diagonal import xyz_to_aet_series, AET_CHANNELS
+from tv_pspline_psd.lisa_aet import xyz_to_aet_series, AET_CHANNELS
 from tv_pspline_psd import PSplineConfig, wdm_analysis_coefficients
 from tv_pspline_psd.inference import adaptive_frequency_bin_starts
 

@@ -26,7 +26,7 @@ from run_aet_diagonal_pilot import (
     tm_theory_psd,
     wdm_valid_length,
 )
-from aet_diagonal import xyz_to_aet_series
+from tv_pspline_psd.lisa_aet import xyz_to_aet_series
 from tv_pspline_psd import PSplineConfig, wdm_analysis_coefficients
 
 HERE = "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation"

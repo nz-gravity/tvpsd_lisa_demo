@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation")
-from aet_component_pspline_nuts import fit_aet_diagonal_nuts
+from tv_pspline_psd.multichannel import fit_aet_diagonal_nuts
 
 d = np.load(
     "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation/"

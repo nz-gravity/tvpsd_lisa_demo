@@ -15,7 +15,7 @@ import numpy as np
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation")
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/wdm_psd")
 
-from aet_component_pspline_nuts import penalized_spline_prior_centre
+from tv_pspline_psd.multichannel import penalized_spline_prior_centre
 from run_aet_diagonal_pilot import oms_theory_psd, tm_theory_psd
 from tv_pspline_psd.splines import (
     create_bspline_basis,

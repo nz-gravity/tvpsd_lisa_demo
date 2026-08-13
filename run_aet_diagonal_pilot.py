@@ -33,11 +33,11 @@ for path in (HERE, PACKAGE_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from aet_component_pspline_nuts import (
+from tv_pspline_psd.multichannel import (
     fit_aet_component_noise_nuts,
     fit_aet_diagonal_nuts,
 )
-from aet_diagonal import (
+from tv_pspline_psd.lisa_aet import (
     AET_CHANNELS,
     diagonal_xyz_psd_to_aet,
     xyz_covariance_to_aet_diagonal,
@@ -734,7 +734,7 @@ def run(args: argparse.Namespace) -> dict:
     del coefficients
 
     # The analytic OMS/TM components enter the M1 likelihood directly, each
-    # with one free per-channel amplitude (see aet_component_pspline_nuts);
+    # with one free per-channel amplitude (see tv_pspline_psd.multichannel);
     # their sum is also retained for simulation-truth recovery and the
     # response-null diagnostic.
     #

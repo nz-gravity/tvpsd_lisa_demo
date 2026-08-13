@@ -26,7 +26,7 @@ from run_aet_diagonal_pilot import (
     tm_theory_psd,
     wdm_valid_length,
 )
-from aet_diagonal import AET_CHANNELS, xyz_to_aet_series
+from tv_pspline_psd.lisa_aet import AET_CHANNELS, xyz_to_aet_series
 from tv_pspline_psd import PSplineConfig, wdm_analysis_coefficients
 from tv_pspline_psd.inference import adaptive_frequency_bin_starts
 
