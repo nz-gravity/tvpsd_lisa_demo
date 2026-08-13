@@ -27,6 +27,13 @@ cd "$LISA_DIR"
 # JAX respects this for CPU intra-op parallelism; match --cpus-per-task.
 export XLA_FLAGS="--xla_force_host_platform_device_count=1"
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
+# Pin the shared estimator to the sibling checkout, exactly as the M0 jobs do:
+# a rung compared against M0 must not import a different tv_pspline_psd.
+export PYTHONPATH="$BASE/wdm_psd${PYTHONPATH:+:$PYTHONPATH}"
+
+# M0-named, but the checks that matter here are shared: package provenance,
+# archive/orbit presence, and inference/evaluation mask separation.
+python ozstar/preflight_m0.py --base "$BASE"
 
 mkdir -p "$LISA_DIR/results"
 python run_aet_diagonal_pilot.py \

@@ -25,6 +25,9 @@ session -- no `jax[cuda]` extra, no GPU-specific code path has been tried.
 
 ## What's here
 
+- `run_m0.sbatch` -- parameterized M0 for the paper's rungs 1 and 2 on any
+  channel: `sbatch ozstar/run_m0.sbatch <channel> <ref|free>`. All scientific
+  settings live here once, so the two rungs differ only in what they assume.
 - `setup_env.sh` -- clones/pulls both repositories and creates/updates the venv
   with the shared package's `[lisa]` extra.
 - `sync_data.sh` -- run **locally**, not on the cluster. Copies the ~1.6 GB
@@ -62,7 +65,35 @@ The current ladder is:
 |---|---|---|
 | 1-2 | X2 continuous | `run_m0_x2.sbatch` |
 | 1-2 | X2 seven-day gap | `run_m0_x2_gap7.sbatch` |
+| 1-2 | any channel | `run_m0.sbatch <channel> <ref\|free>` |
 | 3 | A, E, T jointly | `run_m1.sbatch` |
+
+## The no-gap paper run
+
+Six jobs, all submittable together; under an hour of wall clock.
+
+```bash
+sbatch ozstar/run_m0_x2.sbatch        # corrected X2 anchor (methods receipt)
+sbatch ozstar/run_m0.sbatch A ref     # rung 2
+sbatch ozstar/run_m0.sbatch E ref
+sbatch ozstar/run_m0.sbatch A free    # rung 1
+sbatch ozstar/run_m0.sbatch E free
+sbatch ozstar/run_m1.sbatch           # rung 3
+```
+
+Rungs 1-2 use A and E only: T appears in the paper solely inside M1, where the
+null masking and the sub-3 mHz cut already have a stated treatment. Add
+`sbatch ozstar/run_m0.sbatch T {ref,free}` if the ladder table needs the row.
+
+Deliberately not run for this phase: all gapped jobs (phase 2; note M1 has no
+gap support yet), the frozen sensitivity checks, and the multi-realization
+coverage study. Without the last one, reported coverage stays a
+single-realization descriptive statistic, as
+`ESA_M0_PUBLICATION_PROTOCOL.md` already states.
+
+Before the rung-3 row of any ladder table is meaningful, M1 needs a held-out
+Whittle score matching M0's (`blind_whitening_diagnostics`); it currently
+excludes the validation/test rows from the likelihood without scoring them.
 
 ## Sizing
 
