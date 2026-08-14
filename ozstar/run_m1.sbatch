@@ -40,8 +40,11 @@ mkdir -p "$LISA_DIR/results"
 # -u and the progress bar (default on; not passing --no-progress) mean NUTS
 # warmup/sampling progress streams into the log live instead of only
 # appearing once the run finishes.
+# --wdm-projection-nodes MUST match the M0 runs this fit is tabulated beside:
+# the projected estimand is what makes M0 and M1 coverage comparable at all.
 python -u run_aet_diagonal_pilot.py \
     --output "results/m1_aet_${SLURM_JOB_ID}.npz" \
     --surface-plot "results/m1_aet_${SLURM_JOB_ID}.png" \
     --parameter-plot "results/m1_aet_${SLURM_JOB_ID}_params.png" \
+    --wdm-projection-nodes 16 \
     --warmup 500 --samples 500

@@ -1904,10 +1904,18 @@ def run(args: argparse.Namespace) -> Path:
             "same_mask_bins_knots_and_sampler_settings": True,
         },
         "tv_residual_structure": {
+            # The reference term appears only when one was actually applied:
+            # without --reference-psd-offset this is the free total surface
+            # (ladder rung 1), and naming a reference it never saw would
+            # misreport the very comparison the two rungs exist to make.
             "form": (
-                "log S = log S_reference + g(f) + h(t,f)"
-                if args.residual_structure == "stationary_plus_interaction"
-                else "log S = log S_reference + h(t,f)"
+                (
+                    "log S = log S_reference + g(f) + h(t,f)"
+                    if args.residual_structure == "stationary_plus_interaction"
+                    else "log S = log S_reference + h(t,f)"
+                )
+                if args.response_offset
+                else "log S = h(t,f)  [free total surface, no reference]"
             ),
             "name": args.residual_structure,
             "interaction_zero_time_mean": bool(

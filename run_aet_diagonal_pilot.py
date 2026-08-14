@@ -25,6 +25,7 @@ from backgrounds import noise as background_noise, tdi
 from lisaorbits import InterpolatedOrbits
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import binary_dilation, median_filter, uniform_filter1d
+from scipy.stats import chi2
 
 
 HERE = Path(__file__).resolve().parent
@@ -47,6 +48,8 @@ from component_fit_diagnostics import masked_frequency_bin_mean
 from esa_m0_study import (
     analysis_row_split,
     partition_starts,
+    projected_analytic_channel_noise_components_psd,
+    projected_interpolated_positive_surface,
     training_data_pilot_log_psd,
 )
 from tv_pspline_psd import PSplineConfig, wdm_analysis_coefficients
@@ -166,6 +169,75 @@ def analytic_aet_noise_components_psd(
     return oms_result, tm_result
 
 
+def projected_aet_noise_components_psd(
+    orbit_path: Path,
+    time_tcb: np.ndarray,
+    frequency_hz: np.ndarray,
+    delta_f_hz: float,
+    *,
+    projection_nodes: int = 16,
+    frequency_chunk: int = 384,
+) -> tuple[np.ndarray, np.ndarray]:
+    """AET stack of M0's WDM-kernel-projected analytic OMS/TM components.
+
+    Each returned array is ``(3, n_time, n_frequency)`` in ``AET_CHANNELS``
+    order, matching ``analytic_aet_noise_components_psd``'s layout so the two
+    are drop-in interchangeable. The per-channel projection itself is
+    ``esa_m0_study``'s, so M0 and M1 share one estimand by construction rather
+    than by two implementations agreeing.
+    """
+    oms_result, tm_result = [], []
+    for channel in AET_CHANNELS:
+        oms, tm = projected_analytic_channel_noise_components_psd(
+            channel,
+            orbit_path,
+            time_tcb,
+            frequency_hz,
+            delta_f_hz,
+            projection_nodes=projection_nodes,
+            frequency_chunk=frequency_chunk,
+        )
+        oms_result.append(oms)
+        tm_result.append(tm)
+    return np.stack(oms_result), np.stack(tm_result)
+
+
+def projected_aet_interpolated_surface(
+    source: np.ndarray,
+    source_time: np.ndarray,
+    source_frequency: np.ndarray,
+    target_time: np.ndarray,
+    target_frequency: np.ndarray,
+    delta_f_hz: float,
+    *,
+    projection_nodes: int = 16,
+    frequency_chunk: int = 384,
+    zero_outside_frequency: bool = False,
+) -> np.ndarray:
+    """Per-channel wrapper for M0's single-channel projected interpolator.
+
+    ``interpolate_surface``'s AET signature with the projected estimand:
+    ``source`` is ``(3, n_source_time, n_source_frequency)`` and the result is
+    ``(3, n_target_time, n_target_frequency)``.
+    """
+    return np.stack(
+        [
+            projected_interpolated_positive_surface(
+                channel_surface,
+                source_time,
+                source_frequency,
+                target_time,
+                target_frequency,
+                delta_f_hz,
+                projection_nodes=projection_nodes,
+                frequency_chunk=frequency_chunk,
+                zero_outside_frequency=zero_outside_frequency,
+            )
+            for channel_surface in source
+        ]
+    )
+
+
 def analytic_aet_noise_psd(
     orbit_path: Path,
     time_tcb: np.ndarray,
@@ -275,6 +347,68 @@ def bin_channels(
         counts.append(channel_counts)
     assert grouped_frequency is not None
     return np.stack(binned), np.stack(counts), grouped_frequency
+
+
+def heldout_binned_diagnostics(
+    observed_psd: np.ndarray,
+    counts: np.ndarray,
+    surface: np.ndarray,
+    mask: np.ndarray,
+) -> dict[str, float]:
+    """Truth-free held-out checks, the binned analogue of M0's.
+
+    ``esa_m0_study.blind_whitening_diagnostics`` works on single WDM
+    coefficients, where ``z = w / sqrt(S)`` is standard normal. M1's
+    likelihood is already pooled, so a cell carries ``nu`` coefficients'
+    summed power rather than one signed coefficient. The comparable
+    quantities are therefore built from the normalized mean power
+    ``u = (P / nu) / S``, which has unit expectation exactly as ``z^2``
+    does, and the per-coefficient Whittle log score
+
+        -0.5 * (log S + u)
+
+    which reduces to M0's expression at ``nu = 1``. Both are directly
+    comparable to M0's ``mean_z2`` and ``mean_whittle_log_score``.
+
+    Two of M0's entries are deliberately absent rather than approximated:
+    ``mean_z`` and the lag-one products need signed coefficients, which
+    pooling discards. ``central_90_fraction`` is computed against the
+    ``chi^2_nu`` quantiles appropriate to each cell's own count instead of
+    the fixed 1.645 normal cut, so it remains a nominal-90% check.
+    """
+    values = np.asarray(observed_psd, dtype=float)
+    weights = np.asarray(counts, dtype=float)
+    model = np.asarray(surface, dtype=float)
+    retained = np.asarray(mask, dtype=bool)
+    if not (values.shape == weights.shape == model.shape == retained.shape):
+        raise ValueError("observed, counts, surface, and mask must share shape")
+    selected = (
+        retained
+        & np.isfinite(values)
+        & np.isfinite(model)
+        & (model > 0.0)
+        & (weights > 0.0)
+    )
+    if not np.any(selected):
+        raise ValueError("held-out diagnostics retain no valid cells")
+    nu = weights[selected]
+    u = values[selected] / model[selected]
+    # P / S ~ chi^2_nu, so the nominal central 90% band is count-dependent.
+    lower = chi2.ppf(0.05, nu)
+    upper = chi2.ppf(0.95, nu)
+    inside = (nu * u >= lower) & (nu * u <= upper)
+    return {
+        "n_cells": int(selected.sum()),
+        "n_coefficients": float(nu.sum()),
+        "mean_z2": float(np.mean(u)),
+        "median_ratio_vs_chi2_nu_median": float(
+            np.median(nu * u / chi2.ppf(0.5, nu))
+        ),
+        "central_90_fraction": float(np.mean(inside)),
+        "mean_whittle_log_score": float(
+            np.mean(-0.5 * (np.log(model[selected]) + u))
+        ),
+    }
 
 
 def bin_time_rows(
@@ -738,27 +872,51 @@ def run(args: argparse.Namespace) -> dict:
     # their sum is also retained for simulation-truth recovery and the
     # response-null diagnostic.
     #
+    # PROJECTED onto the WDM frequency kernel, matching esa_m0_study.py's
+    # estimand: a WDM coefficient measures the squared-Meyer-window average of
+    # S across its atom's compact support, not S at the cell centre. Where the
+    # spectrum is smooth the two agree, but inside the drifting TDI null comb
+    # they differ by orders of magnitude, and comparing a fit to the wrong one
+    # is what made the X2 M0 anchor read log-RMSE 0.81 / coverage 0.19 before
+    # the projection landed (0.05 / 0.78 after).
+    #
     # Evaluated DIRECTLY on the fine analysis grid (absolute_time,
-    # fit_frequency), not interpolated from the archive's coarse 256-point
+    # fit_frequency), never interpolated from the archive's coarse 256-point
     # truth_frequency grid: that interpolation smears ~7.5 nats out of the
     # TDI null (see the null-smearing diagnostic), which then propagates into
     # both the truth-comparison arrays AND, since bin_channels frequency-
     # averages this same array, into the fit's own transfer functions.
     # frequency_chunk keeps this from allocating the full fine-grid complex
     # covariance tensor at once.
-    oms_reference_unbinned, tm_reference_unbinned = analytic_aet_noise_components_psd(
-        archive.parent / "noise2a" / "orbits.h5",
-        absolute_time,
-        fit_frequency,
-        frequency_chunk=args.reference_frequency_chunk,
+    #
+    # The transfer functions built from these (T_i = projected_i / S_i^theory)
+    # keep the exact factorization at S_i = S_i^theory, so the component model
+    # still reproduces the projected analytic surface identically. This relies
+    # on S_TM/S_OMS being smooth within one atom -- they carry no null
+    # structure, which all lives in T -- so proj[T S] = proj[T] S(f_m) holds.
+    oms_reference_unbinned, tm_reference_unbinned = (
+        projected_aet_noise_components_psd(
+            archive.parent / "noise2a" / "orbits.h5",
+            absolute_time,
+            fit_frequency,
+            df,
+            projection_nodes=args.wdm_projection_nodes,
+            frequency_chunk=args.reference_frequency_chunk,
+        )
     )
     noise_reference_unbinned = oms_reference_unbinned + tm_reference_unbinned
-    galactic_truth_unbinned = interpolate_surface(
+    # zero_outside_frequency: the Galactic component was generated only over
+    # the archive band, so quadrature nodes beyond it carry no power.
+    galactic_truth_unbinned = projected_aet_interpolated_surface(
         diagonal_xyz_psd_to_aet(truth_galactic_xyz),
         truth_time,
         truth_frequency,
         absolute_time,
         fit_frequency,
+        df,
+        projection_nodes=args.wdm_projection_nodes,
+        frequency_chunk=args.reference_frequency_chunk,
+        zero_outside_frequency=True,
     )
     galactic_template_unbinned = galactic_truth_unbinned / injected_amplitude
 
@@ -855,6 +1013,35 @@ def run(args: argparse.Namespace) -> dict:
             pooled[name], pooled_counts, pooled_time = bin_time_rows(
                 surface, likelihood_counts, absolute_time, time_bin_starts
             )
+        # Pool the excluded rows separately, on the SAME bin boundaries and
+        # with the same count weighting, so each held-out cohort lands in the
+        # bins the fit already predicts. Without this the held-out rows are not
+        # merely down-weighted, they are absent from every output array: the
+        # likelihood pooling gives them zero weight.
+        # The analytic reference is pooled per cohort as well: partition_starts
+        # splits at holdout transitions, so a held-out bin has zero training
+        # weight and the training-pooled reference is NaN exactly there.
+        heldout_pools = {}
+        for cohort_name, cohort_rows in (
+            ("validation", validation_rows),
+            ("test", test_rows),
+        ):
+            cohort_weights = counts * cohort_rows[None, :, None]
+            cohort_observed, cohort_counts, _ = bin_time_rows(
+                observed_binned, cohort_weights, absolute_time, time_bin_starts
+            )
+            cohort_reference, _, _ = bin_time_rows(
+                noise_reference_binned,
+                cohort_weights,
+                absolute_time,
+                time_bin_starts,
+            )
+            heldout_pools[cohort_name] = (
+                cohort_observed,
+                cohort_counts,
+                cohort_reference,
+            )
+
         observed_binned = pooled["observed"]
         noise_reference_binned = pooled["noise_reference"]
         oms_reference_binned = pooled["oms_reference"]
@@ -869,6 +1056,20 @@ def run(args: argparse.Namespace) -> dict:
             f"time bins: {absolute_time.size} from {training_rows.size} WDM rows "
             f"({training_rows.sum()} training)"
         )
+    else:
+        # No time pooling: rows are their own bins, so a cohort is selected by
+        # zeroing the counts of every row outside it.
+        heldout_pools = {
+            cohort_name: (
+                observed_binned,
+                counts * cohort_rows[None, :, None],
+                noise_reference_binned,
+            )
+            for cohort_name, cohort_rows in (
+                ("validation", validation_rows),
+                ("test", test_rows),
+            )
+        }
 
     diagnostic_null_mask = coarse_null_mask(
         noise_reference_binned, grouped_frequency
@@ -885,6 +1086,18 @@ def run(args: argparse.Namespace) -> dict:
         t_index = AET_CHANNELS.index("T")
         fit_valid[t_index] &= grouped_frequency[None, :] >= args.t_channel_fmin_hz
     whitening_mask = fit_valid & ~diagnostic_null_mask
+    # Held-out cells must NOT inherit fit_valid: partition_starts splits bins
+    # at holdout transitions, so a held-out bin carries zero training counts
+    # and fit_valid is false there by construction. Reusing it would silently
+    # score an empty cohort. Apply only the cuts that are statements about the
+    # model's validity -- the response-null corridors and the T-channel
+    # low-frequency exclusion -- and let each cohort's own counts decide which
+    # cells it actually populates.
+    heldout_eligible = ~diagnostic_null_mask
+    if args.t_channel_fmin_hz > 0.0:
+        heldout_eligible[AET_CHANNELS.index("T")] &= (
+            grouped_frequency[None, :] >= args.t_channel_fmin_hz
+        )
     warped_frequency_hz = None
     if args.frequency_warp:
         arm_ratio = armlength_ratio(
@@ -983,6 +1196,68 @@ def run(args: argparse.Namespace) -> dict:
         posterior,
         whitening_mask=whitening_mask,
     )
+
+    # Held-out scores on the rows the likelihood never saw. Until this existed
+    # every M1 number was in-sample while M0's were not, so the two models'
+    # rows in a ladder table were not measuring the same thing. Bands match
+    # esa_m0_study.py exactly so the tables can sit side by side.
+    bands = {
+        "low": grouped_frequency <= 3.0e-3,
+        "retained_full": np.ones(grouped_frequency.size, dtype=bool),
+        "high_continuum": grouped_frequency >= args.null_min_frequency,
+    }
+    heldout_scores: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
+    for cohort_name, (
+        cohort_observed,
+        cohort_counts,
+        cohort_reference,
+    ) in heldout_pools.items():
+        heldout_scores[cohort_name] = {}
+        for channel_index, channel_name in enumerate(AET_CHANNELS):
+            channel_scores: dict[str, dict[str, float]] = {}
+            for band_name, band_select in bands.items():
+                cohort_mask = (
+                    heldout_eligible[channel_index]
+                    & (cohort_counts[channel_index] > 0.0)
+                    & np.isfinite(cohort_observed[channel_index])
+                    & band_select[None, :]
+                )
+                if not np.any(cohort_mask):
+                    continue
+                # The analytic OMS+TM surface is M1's zero-parameter physics
+                # model, the same role M0's reference plays, so the gain is
+                # comparable between the two ladders.
+                reference = heldout_binned_diagnostics(
+                    cohort_observed[channel_index],
+                    cohort_counts[channel_index],
+                    cohort_reference[channel_index],
+                    cohort_mask,
+                )
+                fitted = heldout_binned_diagnostics(
+                    cohort_observed[channel_index],
+                    cohort_counts[channel_index],
+                    posterior.total_median[channel_index],
+                    cohort_mask,
+                )
+                fitted["mean_log_score_gain_vs_reference"] = float(
+                    fitted["mean_whittle_log_score"]
+                    - reference["mean_whittle_log_score"]
+                )
+                channel_scores[band_name] = {
+                    "reference_only": reference,
+                    "component_model": fitted,
+                }
+            heldout_scores[cohort_name][channel_name] = channel_scores
+    for channel_name, channel_scores in heldout_scores.get("test", {}).items():
+        full = channel_scores.get("retained_full")
+        if full is None:
+            continue
+        fitted = full["component_model"]
+        print(
+            f"held-out test {channel_name}: mean_z2={fitted['mean_z2']:.4f} "
+            f"central90={fitted['central_90_fraction']:.4f} "
+            f"score_gain={fitted['mean_log_score_gain_vs_reference']:+.4f}"
+        )
     plot_surfaces(
         surface_plot,
         grouped_frequency,
@@ -1043,12 +1318,29 @@ def run(args: argparse.Namespace) -> dict:
         approximation=np.asarray(
             "product of diagonal AET Whittle likelihoods; AET CSD ignored; "
             "diagonal PSDs rotated under zero-XYZ-CSD archive contract; "
-            "noise is the analytic OMS+TM surface as a fixed offset times a "
-            "free P-spline residual (the OMS/TM shape, including the drifting "
-            "TDI null, enters the likelihood; the spline may depart from it "
-            "freely; amplitudes are not sampled, being redundant with the spline); "
+            + (
+                "noise is built from the physical TM/OMS frequency spectra "
+                "through the orbit-derived TDI transfer functions "
+                "(S_noise,c = T_TM,c S_TM + T_OMS,c S_OMS), so all time "
+                "dependence including the drifting null comes from the orbits "
+                "and no free time-dependent noise parameters are sampled; "
+                "component amplitudes are not sampled, being redundant with "
+                "the frequency splines"
+                if args.component_noise
+                else "noise is the analytic OMS+TM surface as a fixed offset "
+                "times a free time-frequency P-spline residual"
+            )
+            + "; estimand is the WDM-frequency-kernel projected marginal power "
+            f"({args.wdm_projection_nodes} quadrature nodes per atom), "
+            "matching esa_m0_study.py; "
             "all valid bins fitted; response-null neighborhoods omitted only "
             "from continuum-whitening summaries"
+        ),
+        heldout_scores_json=np.asarray(json.dumps(heldout_scores)),
+        wdm_projection_nodes=np.asarray(args.wdm_projection_nodes),
+        wdm_projection_delta_f_hz=np.asarray(df),
+        wdm_projection_kernel=np.asarray(
+            "squared compact-support Meyer frequency window"
         ),
         posterior_usable=posterior_usable,
         posterior_status=np.asarray(posterior_status),
@@ -1074,6 +1366,15 @@ def run(args: argparse.Namespace) -> dict:
             channel: float(np.mean(diagnostic_null_mask[index]))
             for index, channel in enumerate(AET_CHANNELS)
         },
+        "heldout_scores": heldout_scores,
+        "heldout_score_contract": (
+            "cohort rows excluded from the likelihood, pooled on the fit's own "
+            "time bins; u = (P/nu)/S with unit expectation, per-coefficient "
+            "Whittle log score -0.5(log S + u), central 90% against chi^2_nu; "
+            "gain is versus the analytic OMS+TM reference. Comparable to "
+            "esa_m0_study.py's blind_diagnostics; mean_z and lag-one products "
+            "are omitted because pooling discards coefficient signs"
+        ),
         **diagnostics,
         **metrics,
     }
@@ -1229,7 +1530,26 @@ def parser() -> argparse.ArgumentParser:
     )
     argument_parser.add_argument(
         "--reference-frequency-chunk", type=int, default=96,
-        help="frequency chunk size for the direct (unsmeared) analytic reference",
+        help=(
+            "quadrature frequencies evaluated per chunk when projecting the "
+            "analytic reference; must be at least --wdm-projection-nodes. Left "
+            "at 96 (not M0's 384) because this job requests less memory: it "
+            "only costs loop iterations"
+        ),
+    )
+    argument_parser.add_argument(
+        "--null-min-frequency", type=float, default=0.02,
+        help=(
+            "lower edge of the high-continuum band for held-out scores; must "
+            "match esa_m0_study.py's value for the two ladders to share bands"
+        ),
+    )
+    argument_parser.add_argument(
+        "--wdm-projection-nodes", type=int, default=16,
+        help=(
+            "quadrature nodes per WDM frequency atom for the projected "
+            "estimand. Must match the M0 runs this fit is tabulated beside"
+        ),
     )
     argument_parser.add_argument("--phi-time", type=float, default=100.0)
     argument_parser.add_argument("--phi-frequency", type=float, default=100.0)

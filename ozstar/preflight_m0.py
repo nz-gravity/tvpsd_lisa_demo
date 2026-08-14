@@ -179,10 +179,47 @@ def main() -> None:
             "production-grid preflight did not resolve a point-evaluation null"
         )
 
+    # M1 reaches the same projected estimand through two thin AET wrappers
+    # around the functions checked above. Verify them here: the fit takes about
+    # an hour, and a shape or normalization error would otherwise surface only
+    # in the final metrics.
+    from run_aet_diagonal_pilot import (  # noqa: E402
+        projected_aet_interpolated_surface,
+    )
+
+    flat_time = np.linspace(0.0, 1.0, 5)
+    flat_frequency = np.geomspace(1.0e-4, 1.0e-1, 32)
+    flat_source = np.full((3, flat_time.size, flat_frequency.size), 7.0)
+    flat_target = np.geomspace(2.0e-4, 5.0e-2, 6)
+    flat_projected = projected_aet_interpolated_surface(
+        flat_source,
+        flat_time,
+        flat_frequency,
+        flat_time,
+        flat_target,
+        1.0e-6,
+        projection_nodes=16,
+        frequency_chunk=96,
+    )
+    expected_shape = (3, flat_time.size, flat_target.size)
+    if flat_projected.shape != expected_shape:
+        raise RuntimeError(
+            f"projected AET surface has shape {flat_projected.shape}, "
+            f"expected {expected_shape}"
+        )
+    # Quadrature weights include the squared Meyer window and sum to one, so a
+    # constant spectrum must survive projection unchanged.
+    if not np.allclose(flat_projected, 7.0, rtol=1.0e-10):
+        raise RuntimeError(
+            "AET projection wrapper did not preserve a constant surface: max "
+            f"deviation {np.max(np.abs(flat_projected - 7.0)):.3g}"
+        )
+
     print(f"[preflight passed] package={imported}")
     print(f"[preflight passed] archive={archive}")
     print(f"[preflight passed] reference_handling={handling}")
     print("[preflight passed] inference includes response-null training cells")
+    print("[preflight passed] AET projection wrappers preserve shape and constants")
     print(
         "[preflight passed] 16-vs-32 node projection max relative change="
         f"{np.max(projection_relative_change):.3g}"

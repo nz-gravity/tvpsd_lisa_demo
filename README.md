@@ -63,10 +63,12 @@ is the machine-readable record of the selected results.
 
 ## Known issues
 
-- **Held-out folds are excluded but not yet scored.** The split removes
-  validation/test rows from the M1 likelihood, but no held-out Whittle score is
-  computed, so M1's reported numbers are still in-sample. M0 does score its
-  test cells.
+- ~~**Held-out folds are excluded but not yet scored.**~~ Resolved:
+  `heldout_binned_diagnostics` scores the validation and test cohorts on the
+  fit's own bins, in M0's three bands, with the gain taken against the analytic
+  OMS+TM reference. `mean_z` and the lag-one products are not reported, since
+  time pooling discards coefficient signs; `central_90_fraction` uses
+  `chi^2_nu` quantiles rather than a fixed normal cut.
 - **Coverage.** M0 low-band truth inclusion is 0.707 (0.886 full band); M1 is
   ~0.65-0.92 depending on channel. Neither is repeated-realization coverage.
   Whether this is the diagonal likelihood, spline bias, or interval
