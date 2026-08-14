@@ -6,7 +6,7 @@
 #
 # With no argument, results land directly in lisa_data_generation/results/
 # (not results/results/). Re-running is safe: rsync transfers only files that
-# are new or changed. This script deliberately has no --delete flag, so local
+# are missing locally. This script deliberately has no --delete flag, so local
 # artifacts are never removed when the remote tree changes.
 set -euo pipefail
 
@@ -26,6 +26,7 @@ mkdir -p "$LOCAL_RESULTS" "$LOCAL_LOGS"
 RSYNC_OPTIONS=(
     -avh
     --progress
+    --ignore-existing
     --partial
     --partial-dir=.rsync-partial
     --delay-updates

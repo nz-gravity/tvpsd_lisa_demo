@@ -10,11 +10,16 @@
 #
 # M0 for the paper's ladder rungs 1 and 2, on one channel.
 #
-#   sbatch ozstar/run_m0.sbatch <channel> <rung>
+#   sbatch ozstar/run_m0.sbatch <channel> <rung> [mode]
 #     channel : A | E | T | X2 | Y2 | Z2
 #     rung    : ref  -- rung 2, response-informed. Fits R+g and R+g+h and
 #                       scores both against the fixed reference R.
 #               free -- rung 1, reference-agnostic free total TV surface.
+#     mode    : continuous (default) | gapped
+#
+# The gapped mode injects one seven-day gap at mid-year and excludes one WDM
+# pixel at each edge, matching run_m0_x2_gap7.sbatch so the gapped A/E runs are
+# comparable to the frozen X2 gap anchor.
 #
 # Every scientific setting is spelled out here and shared by both rungs except
 # the three lines that define the rung itself, so the two fits differ only in
@@ -28,8 +33,9 @@
 # you would rather match the two exactly.
 set -euo pipefail
 
-CHANNEL="${1:?usage: sbatch run_m0.sbatch <channel> <ref|free>}"
-RUNG="${2:?usage: sbatch run_m0.sbatch <channel> <ref|free>}"
+CHANNEL="${1:?usage: sbatch run_m0.sbatch <channel> <ref|free> [continuous|gapped]}"
+RUNG="${2:?usage: sbatch run_m0.sbatch <channel> <ref|free> [continuous|gapped]}"
+MODE="${3:-continuous}"
 
 case "$RUNG" in
     ref)
@@ -50,6 +56,25 @@ case "$RUNG" in
         ;;
 esac
 
+case "$MODE" in
+    continuous)
+        MODE_ARGS=(--mode continuous)
+        ;;
+    gapped)
+        MODE_ARGS=(
+            --mode gapped
+            --gap-scenario single
+            --single-gap-days 7
+            --single-gap-center-year 0.5
+            --gap-buffer-pixels 1
+        )
+        ;;
+    *)
+        echo "unknown mode '$MODE' (expected 'continuous' or 'gapped')" >&2
+        exit 2
+        ;;
+esac
+
 BASE=/fred/oz200/avajpeyi/projects/WDM_PSD
 LISA_DIR="$BASE/tvpsd_lisa_demo"
 mkdir -p "$LISA_DIR/ozstar/logs" "$LISA_DIR/results"
@@ -66,10 +91,10 @@ python ozstar/preflight_m0.py --base "$BASE"
 
 python esa_m0_study.py \
     --channel "$CHANNEL" \
-    --mode continuous \
+    "${MODE_ARGS[@]}" \
     --archive "$LISA_DIR/combined_esa_xyz.h5" \
     --orbits "$LISA_DIR/noise2a/orbits.h5" \
-    --output-dir "results/m0_${CHANNEL}_${RUNG}_${SLURM_JOB_ID}" \
+    --output-dir "results/m0_${CHANNEL}_${RUNG}_${MODE}_${SLURM_JOB_ID}" \
     --fmin 1e-4 --fmax 1e-1 --nt 2048 \
     --time-knots 8 --frequency-knots 36 --frequency-knot-break 1e-2 \
     --time-bin 4 --split-cycle 7 --validation-fold 5 --test-fold 6 \
