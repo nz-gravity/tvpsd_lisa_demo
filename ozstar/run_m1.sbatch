@@ -4,7 +4,7 @@
 #SBATCH --partition=milan
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
-#SBATCH --mem=16G
+#SBATCH --mem=32G
 #SBATCH --time=06:00:00
 #SBATCH --output=/fred/oz200/avajpeyi/projects/WDM_PSD/tvpsd_lisa_demo/ozstar/logs/m1_%j.log
 #
@@ -13,6 +13,8 @@
 # full 0.1 Hz band and 500/500 warmup/samples will take longer -- the
 # ~2850s full-band run seen locally undershot the cluster: job 15420119
 # ran the full 2h ceiling without finishing, so this ceiling is now 6h.
+# Job 15434685 (and again 15501101, after --mem regressed back to 16G) was
+# OOM-killed at 16G partway through the second chain; 32G is required.
 #
 #   sbatch ozstar/run_m1.sbatch
 set -euo pipefail
