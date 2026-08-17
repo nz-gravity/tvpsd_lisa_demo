@@ -75,7 +75,7 @@ The current ladder is:
 | 1-2 | X2 continuous | `run_m0_x2.sbatch` |
 | 1-2 | X2 seven-day gap | `run_m0_x2_gap7.sbatch` |
 | 1-2 | any channel, either mode | `run_m0.sbatch <channel> <ref\|free> [continuous\|gapped]` |
-| 3 | A, E, T jointly | `run_m1.sbatch` |
+| 3 | A, E, T jointly, either mode | `run_m1.sbatch [continuous\|gapped]` |
 
 ## The paper run
 
@@ -96,15 +96,17 @@ sbatch ozstar/run_m0.sbatch A ref gapped
 sbatch ozstar/run_m0.sbatch E ref gapped
 sbatch ozstar/run_m0.sbatch A free gapped
 sbatch ozstar/run_m0.sbatch E free gapped
+sbatch ozstar/run_m1.sbatch gapped
 ```
 
 Rungs 1-2 use A and E only: T appears in the paper solely inside M1, where the
 null masking and the sub-3 mHz cut already have a stated treatment. Add
 `sbatch ozstar/run_m0.sbatch T {ref,free}` if the ladder table needs the row.
 
-The gapped A/E jobs use the same gap geometry as the frozen `run_m0_x2_gap7`
-anchor, so the two are directly comparable. M1 still has no gap support, so the
-gapped set covers rungs 1-2 only.
+All gapped jobs share one geometry -- a single seven-day gap at mid-year, a
+one-hour cosine taper, and a one-WDM-pixel edge buffer -- so M0 and M1 describe
+the same outage and both match the frozen `run_m0_x2_gap7` anchor. M1 reuses
+M0's `gate_gaps`/`good_time_bins` rather than reimplementing them.
 
 Deliberately not run: the frozen sensitivity checks and the multi-realization
 coverage study. Without the last one, reported coverage stays a

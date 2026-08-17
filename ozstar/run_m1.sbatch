@@ -16,8 +16,31 @@
 # Job 15434685 (and again 15501101, after --mem regressed back to 16G) was
 # OOM-killed at 16G partway through the second chain; 32G is required.
 #
-#   sbatch ozstar/run_m1.sbatch
+#   sbatch ozstar/run_m1.sbatch [continuous|gapped]
+#
+# The gapped mode uses the same geometry as run_m0.sbatch's gapped mode -- one
+# seven-day gap at mid-year, one-hour cosine taper, one-pixel edge buffer --
+# so the M0 and M1 gap results describe the same outage.
 set -euo pipefail
+
+MODE="${1:-continuous}"
+case "$MODE" in
+    continuous) MODE_ARGS=(--mode continuous) ;;
+    gapped)
+        MODE_ARGS=(
+            --mode gapped
+            --gap-scenario single
+            --single-gap-days 7
+            --single-gap-center-year 0.5
+            --gap-buffer-pixels 1
+            --taper-hours 1
+        )
+        ;;
+    *)
+        echo "unknown mode '$MODE' (expected 'continuous' or 'gapped')" >&2
+        exit 2
+        ;;
+esac
 
 BASE=/fred/oz200/avajpeyi/projects/WDM_PSD
 LISA_DIR="$BASE/tvpsd_lisa_demo"
@@ -45,8 +68,9 @@ mkdir -p "$LISA_DIR/results"
 # --wdm-projection-nodes MUST match the M0 runs this fit is tabulated beside:
 # the projected estimand is what makes M0 and M1 coverage comparable at all.
 python -u run_aet_diagonal_pilot.py \
-    --output "results/m1_aet_${SLURM_JOB_ID}.npz" \
-    --surface-plot "results/m1_aet_${SLURM_JOB_ID}.png" \
-    --parameter-plot "results/m1_aet_${SLURM_JOB_ID}_params.png" \
+    "${MODE_ARGS[@]}" \
+    --output "results/m1_aet_${MODE}_${SLURM_JOB_ID}.npz" \
+    --surface-plot "results/m1_aet_${MODE}_${SLURM_JOB_ID}.png" \
+    --parameter-plot "results/m1_aet_${MODE}_${SLURM_JOB_ID}_params.png" \
     --wdm-projection-nodes 16 \
     --warmup 500 --samples 500

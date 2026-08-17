@@ -47,6 +47,9 @@ from tv_pspline_psd.lisa_aet import (
 from component_fit_diagnostics import masked_frequency_bin_mean
 from esa_m0_study import (
     analysis_row_split,
+    gate_gaps,
+    good_time_bins,
+    lisa_like_gaps,
     partition_starts,
     projected_analytic_channel_noise_components_psd,
     projected_interpolated_positive_surface,
@@ -58,6 +61,7 @@ from tv_pspline_psd.inference import adaptive_frequency_bin_starts
 
 
 SECONDS_PER_YEAR = 365.25 * 24 * 3600
+SECONDS_PER_DAY = 24 * 3600
 CARRIER_FREQUENCY_HZ = 281_600_000_000_000.0
 
 
@@ -810,6 +814,28 @@ def run(args: argparse.Namespace) -> dict:
 
     aet_total = xyz_to_aet_series(xyz_total)
     del xyz_total
+
+    # Gaps are applied to the AET series before the WDM transform, using M0's
+    # own gating so the two analyses treat an outage identically: zeroed with a
+    # cosine taper, then whole WDM rows touched by the taper (plus a buffer)
+    # dropped from the likelihood.
+    t_obs_s = n_total * dt
+    gaps: list[tuple[float, float]] = []
+    if args.mode == "gapped":
+        if args.gap_scenario == "lisa_like":
+            gaps = lisa_like_gaps(t_obs_s, args.gap_seed)
+        else:
+            duration = args.single_gap_days * SECONDS_PER_DAY
+            centre = args.single_gap_center_year * SECONDS_PER_YEAR
+            gaps = [(max(0.0, centre - 0.5 * duration),
+                     min(t_obs_s, centre + 0.5 * duration))]
+        aet_total = np.stack([
+            gate_gaps(channel, dt, gaps, taper_s=args.taper_hours * 3600.0)
+            for channel in aet_total
+        ])
+        gated_hours = sum(stop - start for start, stop in gaps) / 3600.0
+        print(f"gaps: {len(gaps)} gating {gated_hours:.1f} h of "
+              f"{t_obs_s / 3600.0:.1f} h")
     nf = n_total // args.nt
     df = 1.0 / (2.0 * nf * dt)
     trim_low = max(1, int(np.ceil(args.fmin_hz / df)))
@@ -934,9 +960,26 @@ def run(args: argparse.Namespace) -> dict:
         validation_fold=args.validation_fold,
         test_fold=args.test_fold,
     )
+    good_rows = np.ones(absolute_time.size, dtype=bool)
+    if gaps:
+        good_rows = good_time_bins(
+            fit_time_grid,
+            t_obs_s,
+            gaps,
+            args.nt,
+            taper_s=args.taper_hours * 3600.0,
+            buffer_pixels=args.gap_buffer_pixels,
+        )
+        # A gated row has no usable data, so it leaves every cohort -- it is not
+        # a held-out row that the model failed to predict, it is a row that was
+        # never observed.
+        training_rows &= good_rows
+        validation_rows &= good_rows
+        test_rows &= good_rows
     print(
         f"row split: {training_rows.sum()} training / {validation_rows.sum()} "
         f"validation / {test_rows.sum()} test of {absolute_time.size} WDM rows"
+        + (f" ({(~good_rows).sum()} gated)" if gaps else "")
     )
 
     if args.truth_free_bins:
@@ -1381,6 +1424,10 @@ def run(args: argparse.Namespace) -> dict:
             "from continuum-whitening summaries"
         ),
         heldout_scores_json=np.asarray(json.dumps(heldout_scores)),
+        mode=np.asarray(args.mode),
+        gap_schedule_s=np.asarray(gaps, dtype=float).reshape(-1, 2),
+        good_rows=good_rows,
+        gap_buffer_pixels=np.asarray(args.gap_buffer_pixels),
         wdm_projection_nodes=np.asarray(args.wdm_projection_nodes),
         wdm_projection_delta_f_hz=np.asarray(df),
         wdm_projection_kernel=np.asarray(
@@ -1581,6 +1628,17 @@ def parser() -> argparse.ArgumentParser:
             "only costs loop iterations"
         ),
     )
+    argument_parser.add_argument(
+        "--mode", choices=("continuous", "gapped"), default="continuous",
+        help="gapped injects outages before the WDM transform, as in M0",
+    )
+    argument_parser.add_argument(
+        "--gap-scenario", choices=("lisa_like", "single"), default="single")
+    argument_parser.add_argument("--single-gap-days", type=float, default=7.0)
+    argument_parser.add_argument("--single-gap-center-year", type=float, default=0.5)
+    argument_parser.add_argument("--gap-buffer-pixels", type=float, default=1.0)
+    argument_parser.add_argument("--taper-hours", type=float, default=1.0)
+    argument_parser.add_argument("--gap-seed", type=int, default=1)
     argument_parser.add_argument(
         "--null-min-frequency", type=float, default=0.02,
         help=(
