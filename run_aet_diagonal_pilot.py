@@ -997,49 +997,65 @@ def run(args: argparse.Namespace) -> dict:
     # so they never enter the likelihood, and every surface is pooled with the
     # SAME weights so a bin means the same cells in the data and the truth.
     if args.time_bin > 1:
+        # Split on every cohort transition, not just training/held-out. With
+        # only training_rows supplied, validation fold 5 and test fold 6 are
+        # adjacent and land in the same bin (219 of 950 bins), so the two
+        # cohorts share a posterior value and are not independent held-out
+        # estimates. Adding the cohort states subdivides only the non-training
+        # runs, so the training bins -- and therefore the fit -- are unchanged.
         time_bin_starts = partition_starts(
-            absolute_time.size, args.time_bin, training_rows
+            absolute_time.size,
+            args.time_bin,
+            training_rows,
+            validation_rows,
+            test_rows,
         )
         likelihood_counts = counts * training_rows[None, :, None]
         pooled = {}
-        for name, surface in (
-            ("observed", observed_binned),
-            ("noise_reference", noise_reference_binned),
-            ("oms_reference", oms_reference_binned),
-            ("tm_reference", tm_reference_binned),
-            ("galactic_truth", galactic_truth_binned),
-            ("galactic_template", galactic_template_binned),
+        # The DATA is pooled over training rows only -- that is what the
+        # likelihood is entitled to see. The deterministic model surfaces are
+        # pooled over ALL rows: partition_starts splits bins at holdout
+        # transitions, so a bin is entirely training or entirely held out, and
+        # within a training bin the two weightings are identical. At a held-out
+        # bin, training weights give NaN, which would leave the model undefined
+        # exactly where the held-out score has to evaluate it.
+        for name, surface, weights in (
+            ("observed", observed_binned, likelihood_counts),
+            ("noise_reference", noise_reference_binned, counts),
+            ("oms_reference", oms_reference_binned, counts),
+            ("tm_reference", tm_reference_binned, counts),
+            ("galactic_truth", galactic_truth_binned, counts),
+            ("galactic_template", galactic_template_binned, counts),
         ):
-            pooled[name], pooled_counts, pooled_time = bin_time_rows(
-                surface, likelihood_counts, absolute_time, time_bin_starts
+            pooled[name], surface_counts, pooled_time = bin_time_rows(
+                surface, weights, absolute_time, time_bin_starts
             )
+            if name == "observed":
+                # Only the training pooling defines the likelihood counts.
+                pooled_counts = surface_counts
         # Pool the excluded rows separately, on the SAME bin boundaries and
         # with the same count weighting, so each held-out cohort lands in the
         # bins the fit already predicts. Without this the held-out rows are not
         # merely down-weighted, they are absent from every output array: the
         # likelihood pooling gives them zero weight.
-        # The analytic reference is pooled per cohort as well: partition_starts
-        # splits at holdout transitions, so a held-out bin has zero training
-        # weight and the training-pooled reference is NaN exactly there.
+        # The reference needs no per-cohort pooling now that the model surfaces
+        # are pooled over all rows: within a held-out bin the two are the same
+        # average, because the bin contains only held-out rows.
         heldout_pools = {}
         for cohort_name, cohort_rows in (
             ("validation", validation_rows),
             ("test", test_rows),
         ):
-            cohort_weights = counts * cohort_rows[None, :, None]
             cohort_observed, cohort_counts, _ = bin_time_rows(
-                observed_binned, cohort_weights, absolute_time, time_bin_starts
-            )
-            cohort_reference, _, _ = bin_time_rows(
-                noise_reference_binned,
-                cohort_weights,
+                observed_binned,
+                counts * cohort_rows[None, :, None],
                 absolute_time,
                 time_bin_starts,
             )
             heldout_pools[cohort_name] = (
                 cohort_observed,
                 cohort_counts,
-                cohort_reference,
+                pooled["noise_reference"],
             )
 
         observed_binned = pooled["observed"]
@@ -1098,6 +1114,22 @@ def run(args: argparse.Namespace) -> dict:
         heldout_eligible[AET_CHANNELS.index("T")] &= (
             grouped_frequency[None, :] >= args.t_channel_fmin_hz
         )
+    # Cells where the PHYSICAL model is defined, which is not the same as cells
+    # the likelihood may use. A held-out bin has zero training counts, so
+    # fit_valid is false there, but its transfer functions and Galactic
+    # template are perfectly well defined. Guarding the model arrays with
+    # fit_valid replaced them by 1.0 and 0.0 at exactly those bins, collapsing
+    # the posterior surface to the bare component spectra (~1e-40 against a
+    # ~1e-12 PSD) and making any held-out score meaningless. The likelihood
+    # restriction is carried by mask=fit_valid alone; these guards exist only
+    # to keep non-finite values out of the arrays.
+    model_defined = (
+        np.isfinite(oms_reference_binned)
+        & np.isfinite(tm_reference_binned)
+        & np.isfinite(galactic_template_binned)
+        & (oms_reference_binned > 0.0)
+        & (tm_reference_binned > 0.0)
+    )
     warped_frequency_hz = None
     if args.frequency_warp:
         arm_ratio = armlength_ratio(
@@ -1127,11 +1159,11 @@ def run(args: argparse.Namespace) -> dict:
             np.where(fit_valid, observed_binned, 1.0),
             np.where(fit_valid, counts, 1.0),
             grouped_frequency,
-            transfer_tm=np.where(fit_valid, transfer_tm, 1.0),
-            transfer_oms=np.where(fit_valid, transfer_oms, 1.0),
+            transfer_tm=np.where(model_defined, transfer_tm, 1.0),
+            transfer_oms=np.where(model_defined, transfer_oms, 1.0),
             tm_theory_psd=tm_theory_psd(grouped_frequency),
             oms_theory_psd=oms_theory_psd(grouped_frequency),
-            galactic_template_psd=np.where(fit_valid, galactic_template_binned, 0.0),
+            galactic_template_psd=np.where(model_defined, galactic_template_binned, 0.0),
             mask=fit_valid,
             n_frequency_knots=args.component_frequency_knots,
             phi_tm=args.phi_tm,
@@ -1151,9 +1183,9 @@ def run(args: argparse.Namespace) -> dict:
             np.where(fit_valid, counts, 1.0),
             absolute_time,
             grouped_frequency,
-            oms_reference_psd=np.where(fit_valid, oms_reference_binned, 1.0),
-            tm_reference_psd=np.where(fit_valid, tm_reference_binned, 1.0),
-            galactic_template_psd=np.where(fit_valid, galactic_template_binned, 0.0),
+            oms_reference_psd=np.where(model_defined, oms_reference_binned, 1.0),
+            tm_reference_psd=np.where(model_defined, tm_reference_binned, 1.0),
+            galactic_template_psd=np.where(model_defined, galactic_template_binned, 0.0),
             mask=fit_valid,
             n_time_knots=args.time_knots,
             n_frequency_knots=args.frequency_knots,
@@ -1218,6 +1250,7 @@ def run(args: argparse.Namespace) -> dict:
             for band_name, band_select in bands.items():
                 cohort_mask = (
                     heldout_eligible[channel_index]
+                    & model_defined[channel_index]
                     & (cohort_counts[channel_index] > 0.0)
                     & np.isfinite(cohort_observed[channel_index])
                     & band_select[None, :]
@@ -1248,6 +1281,17 @@ def run(args: argparse.Namespace) -> dict:
                     "component_model": fitted,
                 }
             heldout_scores[cohort_name][channel_name] = channel_scores
+    for cohort_name, cohort_scores in heldout_scores.items():
+        for channel_name, channel_scores in cohort_scores.items():
+            for band_name, models in channel_scores.items():
+                z2 = models["component_model"]["mean_z2"]
+                if not 0.1 < z2 < 10.0:
+                    print(
+                        f"WARNING: held-out mean_z2 = {z2:.4g} for "
+                        f"{cohort_name}/{channel_name}/{band_name}. Expected ~1. "
+                        "The scored surface and the data are not in the same "
+                        "units; the held-out numbers are not usable."
+                    )
     for channel_name, channel_scores in heldout_scores.get("test", {}).items():
         full = channel_scores.get("retained_full")
         if full is None:
