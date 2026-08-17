@@ -16,6 +16,8 @@
 #                       scores both against the fixed reference R.
 #               free -- rung 1, reference-agnostic free total TV surface.
 #     mode    : continuous (default) | gapped
+#     centre  : gap centre in years (default 0.5); 0.8 puts it on the
+#               Galactic modulation peak rather than a quiet stretch
 #
 # The gapped mode injects one seven-day gap at mid-year and excludes one WDM
 # pixel at each edge, matching run_m0_x2_gap7.sbatch so the gapped A/E runs are
@@ -36,6 +38,7 @@ set -euo pipefail
 CHANNEL="${1:?usage: sbatch run_m0.sbatch <channel> <ref|free> [continuous|gapped]}"
 RUNG="${2:?usage: sbatch run_m0.sbatch <channel> <ref|free> [continuous|gapped]}"
 MODE="${3:-continuous}"
+GAP_CENTRE="${4:-0.5}"
 
 case "$RUNG" in
     ref)
@@ -65,7 +68,7 @@ case "$MODE" in
             --mode gapped
             --gap-scenario single
             --single-gap-days 7
-            --single-gap-center-year 0.5
+            --single-gap-center-year "$GAP_CENTRE"
             --gap-buffer-pixels 1
         )
         ;;
@@ -74,6 +77,12 @@ case "$MODE" in
         exit 2
         ;;
 esac
+
+if [ "$MODE" = "gapped" ]; then
+    TAG="gapped_c${GAP_CENTRE}"
+else
+    TAG="$MODE"
+fi
 
 BASE=/fred/oz200/avajpeyi/projects/WDM_PSD
 LISA_DIR="$BASE/tvpsd_lisa_demo"
@@ -94,7 +103,7 @@ python esa_m0_study.py \
     "${MODE_ARGS[@]}" \
     --archive "$LISA_DIR/combined_esa_xyz.h5" \
     --orbits "$LISA_DIR/noise2a/orbits.h5" \
-    --output-dir "results/m0_${CHANNEL}_${RUNG}_${MODE}_${SLURM_JOB_ID}" \
+    --output-dir "results/m0_${CHANNEL}_${RUNG}_${TAG}_${SLURM_JOB_ID}" \
     --fmin 1e-4 --fmax 1e-1 --nt 2048 \
     --time-knots 8 --frequency-knots 36 --frequency-knot-break 1e-2 \
     --time-bin 4 --split-cycle 7 --validation-fold 5 --test-fold 6 \

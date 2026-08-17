@@ -27,7 +27,7 @@ session -- no `jax[cuda]` extra, no GPU-specific code path has been tried.
 
 - `run_m0.sbatch` -- parameterized M0 for the paper's rungs 1 and 2 on any
   channel and either mode:
-  `sbatch ozstar/run_m0.sbatch <channel> <ref|free> [continuous|gapped]`. All
+  `sbatch ozstar/run_m0.sbatch <channel> <ref|free> [continuous|gapped] [centre]`. All
   scientific settings live here once, so the rungs differ only in what they
   assume and the modes only in whether a gap is injected.
 - `setup_env.sh` -- clones/pulls both repositories and creates/updates the venv
@@ -75,7 +75,7 @@ The current ladder is:
 | 1-2 | X2 continuous | `run_m0_x2.sbatch` |
 | 1-2 | X2 seven-day gap | `run_m0_x2_gap7.sbatch` |
 | 1-2 | any channel, either mode | `run_m0.sbatch <channel> <ref\|free> [continuous\|gapped]` |
-| 3 | A, E, T jointly, either mode | `run_m1.sbatch [continuous\|gapped]` |
+| 3 | A, E, T jointly, either mode | `run_m1.sbatch [continuous\|gapped] [centre]` |
 
 ## The paper run
 
@@ -99,13 +99,27 @@ sbatch ozstar/run_m0.sbatch E free gapped
 sbatch ozstar/run_m1.sbatch gapped
 ```
 
+The gap centre defaults to mid-year. That is a quiet stretch of the Galactic
+modulation (1.7x the annual minimum, log-slope 0.33/yr), so it is the easy
+case. The modulation peaks at t = 0.81 yr at 3.0x the minimum; placing the gap
+there is the harder test and the one a referee will ask about:
+
+```bash
+sbatch ozstar/run_m1.sbatch gapped 0.8
+sbatch ozstar/run_m0.sbatch A ref gapped 0.8   # matched M0 comparison
+```
+
+Output names carry the centre (`..._gapped_c0.8_<jobid>`), so runs at different
+placements cannot overwrite each other.
+
 Rungs 1-2 use A and E only: T appears in the paper solely inside M1, where the
 null masking and the sub-3 mHz cut already have a stated treatment. Add
 `sbatch ozstar/run_m0.sbatch T {ref,free}` if the ladder table needs the row.
 
-All gapped jobs share one geometry -- a single seven-day gap at mid-year, a
-one-hour cosine taper, and a one-WDM-pixel edge buffer -- so M0 and M1 describe
-the same outage and both match the frozen `run_m0_x2_gap7` anchor. M1 reuses
+All gapped jobs share one geometry at a given centre -- a single seven-day gap,
+a one-hour cosine taper, and a one-WDM-pixel edge buffer -- so M0 and M1 run at
+the same centre describe the same outage, and the default centre matches the
+frozen `run_m0_x2_gap7` anchor. M1 reuses
 M0's `gate_gaps`/`good_time_bins` rather than reimplementing them.
 
 Deliberately not run: the frozen sensitivity checks and the multi-realization

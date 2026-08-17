@@ -16,14 +16,20 @@
 # Job 15434685 (and again 15501101, after --mem regressed back to 16G) was
 # OOM-killed at 16G partway through the second chain; 32G is required.
 #
-#   sbatch ozstar/run_m1.sbatch [continuous|gapped]
+#   sbatch ozstar/run_m1.sbatch [continuous|gapped] [gap-centre-year]
 #
-# The gapped mode uses the same geometry as run_m0.sbatch's gapped mode -- one
-# seven-day gap at mid-year, one-hour cosine taper, one-pixel edge buffer --
-# so the M0 and M1 gap results describe the same outage.
+# The gap centre defaults to mid-year (0.5). That is a quiet stretch of the
+# Galactic modulation -- 1.7x the annual minimum, log-slope 0.33/yr -- so a
+# gap there is the easy case. Pass 0.8 to place it on the modulation peak
+# (3.0x minimum), which is the harder and more persuasive test.
+#
+# The gapped mode matches run_m0.sbatch's -- one seven-day gap, one-hour cosine
+# taper, one-pixel edge buffer -- so with the same centre the M0 and M1 gap
+# results describe the same outage.
 set -euo pipefail
 
 MODE="${1:-continuous}"
+GAP_CENTRE="${2:-0.5}"
 case "$MODE" in
     continuous) MODE_ARGS=(--mode continuous) ;;
     gapped)
@@ -31,7 +37,7 @@ case "$MODE" in
             --mode gapped
             --gap-scenario single
             --single-gap-days 7
-            --single-gap-center-year 0.5
+            --single-gap-center-year "$GAP_CENTRE"
             --gap-buffer-pixels 1
             --taper-hours 1
         )
@@ -41,6 +47,13 @@ case "$MODE" in
         exit 2
         ;;
 esac
+
+# Tag encodes the gap centre so two gapped runs cannot overwrite each other.
+if [ "$MODE" = "gapped" ]; then
+    TAG="gapped_c${GAP_CENTRE}"
+else
+    TAG="$MODE"
+fi
 
 BASE=/fred/oz200/avajpeyi/projects/WDM_PSD
 LISA_DIR="$BASE/tvpsd_lisa_demo"
@@ -69,8 +82,8 @@ mkdir -p "$LISA_DIR/results"
 # the projected estimand is what makes M0 and M1 coverage comparable at all.
 python -u run_aet_diagonal_pilot.py \
     "${MODE_ARGS[@]}" \
-    --output "results/m1_aet_${MODE}_${SLURM_JOB_ID}.npz" \
-    --surface-plot "results/m1_aet_${MODE}_${SLURM_JOB_ID}.png" \
-    --parameter-plot "results/m1_aet_${MODE}_${SLURM_JOB_ID}_params.png" \
+    --output "results/m1_aet_${TAG}_${SLURM_JOB_ID}.npz" \
+    --surface-plot "results/m1_aet_${TAG}_${SLURM_JOB_ID}.png" \
+    --parameter-plot "results/m1_aet_${TAG}_${SLURM_JOB_ID}_params.png" \
     --wdm-projection-nodes 16 \
     --warmup 500 --samples 500
