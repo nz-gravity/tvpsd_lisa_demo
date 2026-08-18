@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 import h5py
@@ -31,7 +32,19 @@ from tv_pspline_psd import PSplineConfig, fit_log_pspline_surface  # noqa: E402
 from tv_pspline_psd.inference import _reference_scaled_power  # noqa: E402
 
 
+def _stage(label: str, since: float) -> float:
+    """Print elapsed seconds for one preflight stage and restart the clock.
+
+    The preflight runs before every job, so when it is slow the log has to say
+    which part was slow. Flushed because SLURM buffers stdout.
+    """
+    now = time.perf_counter()
+    print(f"[preflight timing] {label}: {now - since:.1f}s", flush=True)
+    return now
+
+
 def main() -> None:
+    started = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base",
@@ -53,6 +66,8 @@ def main() -> None:
         else (base / "TVPsplinePSD").resolve()
     )
 
+    started = _stage("imports and argument parsing", started)
+
     imported = Path(tv_pspline_psd.__file__).resolve()
     if package_root not in imported.parents:
         raise RuntimeError(
@@ -71,6 +86,8 @@ def main() -> None:
         dt = float(hdf.attrs["dt_seconds"])
         t0_tcb = float(hdf.attrs["t0_tcb"])
         requested_samples = int(hdf.attrs["n_samples"])
+
+    started = _stage("archive open and attribute read", started)
 
     power = np.array([[2.0, 8.0, 18.0]])
     reference = np.array([[1.0e-8, 4.0, 9.0]])
@@ -125,6 +142,8 @@ def main() -> None:
         random_seed=1,
         progress_bar=False,
     )
+    started = _stage("tiny coarse fit (JAX trace and compile)", started)
+
     handling = fit["provenance"]["log_psd_offset"][
         "coarse_likelihood_handling"
     ]
@@ -145,12 +164,18 @@ def main() -> None:
         np.arange(np.ceil(0.02 / delta_f), np.floor(0.1 / delta_f) + 1)
         * delta_f
     )
+    started = _stage("setup of the production-grid response check", started)
+
     point_grid = analytic_channel_noise_psd(
         "X2", orbits, check_times, check_frequency, frequency_chunk=384
     )
     deepest_indices = np.argmin(point_grid, axis=1)
     deepest_frequency = check_frequency[deepest_indices]
     point_at_null = point_grid[np.arange(check_times.size), deepest_indices]
+    started = _stage(
+        f"analytic response over {check_frequency.size} frequencies "
+        f"x {check_times.size} times", started)
+
     projected: dict[int, np.ndarray] = {}
     for nodes in (16, 32):
         values = []
@@ -168,6 +193,9 @@ def main() -> None:
             )
             values.append(float(oms[0, 0] + tm[0, 0]))
         projected[nodes] = np.asarray(values)
+    started = _stage(
+        "projected response, 6 calls (each reloads the orbit file)", started)
+
     projection_relative_change = np.abs(projected[16] / projected[32] - 1.0)
     if np.max(projection_relative_change) > 5.0e-4:
         raise RuntimeError(
@@ -223,6 +251,8 @@ def main() -> None:
     # agree today; nothing enforces it. Check here, because a divergence would
     # silently turn "same data, different models" into three different
     # datasets, with no error raised anywhere.
+    started = _stage("AET projection wrapper check", started)
+
     import run_aet_diagonal_pilot as m1  # noqa: E402
 
     if m1.wdm_valid_length(requested_samples, nt) != n_total:
@@ -238,13 +268,15 @@ def main() -> None:
             )
     shared_schedule = lisa_like_gaps(duration, 1)
 
+    _stage("import of run_aet_diagonal_pilot and gap-schedule identity", started)
+
     print(f"[preflight passed] package={imported}")
     print(f"[preflight passed] archive={archive}")
     print(f"[preflight passed] reference_handling={handling}")
     print("[preflight passed] inference includes response-null training cells")
     print("[preflight passed] AET projection wrappers preserve shape and constants")
     print(
-        f"[preflight passed] shared gap schedule: t_obs={t_obs_s:.0f}s, "
+        f"[preflight passed] shared gap schedule: t_obs={duration:.0f}s, "
         f"{len(shared_schedule)} lisa_like gaps identical across both runners"
     )
     print(
