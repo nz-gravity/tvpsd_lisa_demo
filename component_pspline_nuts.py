@@ -1,4 +1,4 @@
-"""NumPyro NUTS posterior for free-spline-noise M1 PSD decomposition."""
+"""NumPyro NUTS posterior for free-spline-noise H_para PSD decomposition."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from component_pspline_fit import ComponentPSplineFit
 
 @dataclass(frozen=True)
 class ComponentPSplinePosterior:
-    """M1 posterior summaries on the fitted grouped time-frequency grid."""
+    """H_para posterior summaries on the fitted grouped time-frequency grid."""
 
     noise_median: np.ndarray
     noise_lower: np.ndarray
@@ -53,7 +53,7 @@ def _stable_log_knee_ratio(frequency, f_knee, reference_f_knee, gamma):
     )
 
 
-def m1_component_model(
+def h_para_component_model(
     summed_power,
     counts,
     basis_eig_time,
@@ -68,7 +68,7 @@ def m1_component_model(
     config,
     gamma=1680.0,
 ):
-    """M1 Whittle model with a proper tensor-spline prior and Galactic priors."""
+    """H_para Whittle model with a proper tensor-spline prior and Galactic priors."""
     eig_coefficients = sample_tensor_eigen_coefficients(
         basis_eig_time,
         basis_eig_frequency,
@@ -154,7 +154,7 @@ def fit_component_pspline_nuts(
     progress_bar: bool = True,
     map_fit: ComponentPSplineFit | None = None,
 ) -> ComponentPSplinePosterior:
-    """Sample the M1 posterior on a pre-grouped WDM Whittle grid.
+    """Sample the H_para posterior on a pre-grouped WDM Whittle grid.
 
     ``observed_psd`` is the mean squared WDM power in each group and ``counts``
     is the number of retained real WDM coefficients in that group.  Both
@@ -203,7 +203,7 @@ def fit_component_pspline_nuts(
     if not np.isfinite(noise_prior_level) or noise_prior_level <= 0.0:
         raise ValueError("noise_prior_level_psd must be a finite positive scalar")
     if num_chains < 2:
-        raise ValueError("M1 posterior inference requires at least two chains")
+        raise ValueError("H_para posterior inference requires at least two chains")
     if noise_level_log_sd <= 0.0:
         raise ValueError("noise_level_log_sd must be positive")
 
@@ -283,7 +283,7 @@ def fit_component_pspline_nuts(
         config,
     )
     kernel = NUTS(
-        m1_component_model,
+        h_para_component_model,
         init_strategy=init_to_value(values=init_values),
         target_accept_prob=target_accept_probability,
         max_tree_depth=max_tree_depth,
@@ -361,5 +361,5 @@ def fit_component_pspline_nuts(
 __all__ = [
     "ComponentPSplinePosterior",
     "fit_component_pspline_nuts",
-    "m1_component_model",
+    "h_para_component_model",
 ]

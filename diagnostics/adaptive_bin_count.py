@@ -3,7 +3,7 @@ import numpy as np, h5py
 
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation")
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/wdm_psd")
-from run_aet_diagonal_pilot import (
+from run_component_study import (
     wdm_valid_length, time_block_log_pilot, analytic_aet_noise_components_psd,
     interpolate_surface, aet_noise_transfer_functions, oms_theory_psd, tm_theory_psd,
 )

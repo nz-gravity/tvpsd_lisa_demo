@@ -18,7 +18,7 @@ import scipy.linalg as sla
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation")
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/wdm_psd")
 
-from run_aet_diagonal_pilot import oms_theory_psd, tm_theory_psd
+from run_component_study import oms_theory_psd, tm_theory_psd
 from tv_pspline_psd.splines import create_bspline_basis, create_difference_penalty_matrix
 
 d = np.load("/tmp/aet_s12.npz", allow_pickle=True)

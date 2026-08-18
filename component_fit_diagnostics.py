@@ -1,4 +1,4 @@
-"""Matched diagnostics for M0 total-spline and M1 component fits."""
+"""Matched diagnostics for surface-total-spline and H_para component fits."""
 
 from __future__ import annotations
 
@@ -52,12 +52,12 @@ def component_recovery_metrics(
     counts: np.ndarray,
     truth_noise: np.ndarray,
     truth_galactic: np.ndarray,
-    m0_total: np.ndarray,
-    m0_lower: np.ndarray,
-    m0_upper: np.ndarray,
-    m1_noise: np.ndarray,
-    m1_galactic: np.ndarray,
-    m1_total: np.ndarray | None = None,
+    surface_total: np.ndarray,
+    surface_lower: np.ndarray,
+    surface_upper: np.ndarray,
+    h_para_noise: np.ndarray,
+    h_para_galactic: np.ndarray,
+    h_para_total: np.ndarray | None = None,
     whitening_mask: np.ndarray | None = None,
 ) -> dict[str, float]:
     """Calculate fit-domain recovery and continuum-whitening metrics.
@@ -67,8 +67,8 @@ def component_recovery_metrics(
     removing those cells from the fit or from surface-recovery summaries.
     """
     arrays = (
-        observed_total, counts, truth_noise, truth_galactic, m0_total,
-        m0_lower, m0_upper, m1_noise, m1_galactic,
+        observed_total, counts, truth_noise, truth_galactic, surface_total,
+        surface_lower, surface_upper, h_para_noise, h_para_galactic,
     )
     if any(np.asarray(array).shape != np.asarray(observed_total).shape for array in arrays):
         raise ValueError("all metric surfaces must have the same shape")
@@ -77,12 +77,12 @@ def component_recovery_metrics(
     truth_noise = np.asarray(truth_noise, dtype=float)
     truth_galactic = np.asarray(truth_galactic, dtype=float)
     truth_total = truth_noise + truth_galactic
-    m1_total = (
-        np.asarray(m1_noise) + np.asarray(m1_galactic)
-        if m1_total is None else np.asarray(m1_total, dtype=float)
+    h_para_total = (
+        np.asarray(h_para_noise) + np.asarray(h_para_galactic)
+        if h_para_total is None else np.asarray(h_para_total, dtype=float)
     )
-    if m1_total.shape != observed.shape:
-        raise ValueError("m1_total must have the same shape as observed_total")
+    if h_para_total.shape != observed.shape:
+        raise ValueError("h_para_total must have the same shape as observed_total")
     fit_valid = (
         (weight > 0.0) & np.isfinite(observed) & (observed > 0.0)
         & np.isfinite(truth_total) & (truth_total > 0.0)
@@ -106,23 +106,23 @@ def component_recovery_metrics(
     galactic_visible = fit_valid & (truth_galactic / truth_total >= 0.03)
     whitening_weight = np.sum(weight[whitening_valid])
     return {
-        "m0_total_median_abs_log_error": median_absolute_log_ratio(m0_total, truth_total, fit_valid),
-        "m1_total_median_abs_log_error": median_absolute_log_ratio(m1_total, truth_total, fit_valid),
-        "m1_noise_median_abs_log_error_visible": median_absolute_log_ratio(m1_noise, truth_noise, noise_visible),
-        "m1_galactic_median_abs_log_error_visible": median_absolute_log_ratio(
-            m1_galactic, truth_galactic, galactic_visible
+        "surface_total_median_abs_log_error": median_absolute_log_ratio(surface_total, truth_total, fit_valid),
+        "h_para_total_median_abs_log_error": median_absolute_log_ratio(h_para_total, truth_total, fit_valid),
+        "h_para_noise_median_abs_log_error_visible": median_absolute_log_ratio(h_para_noise, truth_noise, noise_visible),
+        "h_para_galactic_median_abs_log_error_visible": median_absolute_log_ratio(
+            h_para_galactic, truth_galactic, galactic_visible
         ),
-        "m0_continuum_mean_z2": float(
-            np.sum(weight[whitening_valid] * observed[whitening_valid] / m0_total[whitening_valid])
+        "surface_continuum_mean_z2": float(
+            np.sum(weight[whitening_valid] * observed[whitening_valid] / surface_total[whitening_valid])
             / whitening_weight
         ),
-        "m1_continuum_mean_z2": float(
-            np.sum(weight[whitening_valid] * observed[whitening_valid] / m1_total[whitening_valid])
+        "h_para_continuum_mean_z2": float(
+            np.sum(weight[whitening_valid] * observed[whitening_valid] / h_para_total[whitening_valid])
             / whitening_weight
         ),
-        "m0_pointwise_90_coverage": float(np.mean(
-            (truth_total[fit_valid] >= m0_lower[fit_valid])
-            & (truth_total[fit_valid] <= m0_upper[fit_valid])
+        "surface_pointwise_90_coverage": float(np.mean(
+            (truth_total[fit_valid] >= surface_lower[fit_valid])
+            & (truth_total[fit_valid] <= surface_upper[fit_valid])
         )),
         "fit_effective_cells": float(np.sum(weight[fit_valid])),
         "whitening_effective_cells": float(whitening_weight),
@@ -138,45 +138,45 @@ def plot_component_model_comparison(
     counts: np.ndarray,
     truth_noise: np.ndarray,
     truth_galactic: np.ndarray,
-    m0_total: np.ndarray,
-    m0_lower: np.ndarray,
-    m0_upper: np.ndarray,
-    m1_noise: np.ndarray,
-    m1_galactic: np.ndarray,
+    surface_total: np.ndarray,
+    surface_lower: np.ndarray,
+    surface_upper: np.ndarray,
+    h_para_noise: np.ndarray,
+    h_para_galactic: np.ndarray,
     galactic_amplitude: float,
     f_knee_hz: float,
-    m1_noise_lower: np.ndarray | None = None,
-    m1_noise_upper: np.ndarray | None = None,
-    m1_galactic_lower: np.ndarray | None = None,
-    m1_galactic_upper: np.ndarray | None = None,
-    m1_total_lower: np.ndarray | None = None,
-    m1_total_upper: np.ndarray | None = None,
-    m1_diagnostics: dict[str, float | int] | None = None,
-    m1_total_estimate: np.ndarray | None = None,
+    h_para_noise_lower: np.ndarray | None = None,
+    h_para_noise_upper: np.ndarray | None = None,
+    h_para_galactic_lower: np.ndarray | None = None,
+    h_para_galactic_upper: np.ndarray | None = None,
+    h_para_total_lower: np.ndarray | None = None,
+    h_para_total_upper: np.ndarray | None = None,
+    h_para_diagnostics: dict[str, float | int] | None = None,
+    h_para_total_estimate: np.ndarray | None = None,
     whitening_mask: np.ndarray | None = None,
 ) -> dict[str, float]:
     """Save a six-panel comparison with claims matched to available uncertainty."""
     output_path = Path(output_path)
     truth_total = truth_noise + truth_galactic
-    m1_total = (
-        m1_noise + m1_galactic
-        if m1_total_estimate is None else np.asarray(m1_total_estimate, dtype=float)
+    h_para_total = (
+        h_para_noise + h_para_galactic
+        if h_para_total_estimate is None else np.asarray(h_para_total_estimate, dtype=float)
     )
-    m1_interval_arrays = (
-        m1_noise_lower, m1_noise_upper, m1_galactic_lower,
-        m1_galactic_upper, m1_total_lower, m1_total_upper,
+    h_para_interval_arrays = (
+        h_para_noise_lower, h_para_noise_upper, h_para_galactic_lower,
+        h_para_galactic_upper, h_para_total_lower, h_para_total_upper,
     )
-    has_m1_posterior = all(array is not None for array in m1_interval_arrays)
+    has_m1_posterior = all(array is not None for array in h_para_interval_arrays)
     valid = counts > 0.0
     metrics = component_recovery_metrics(
         observed_total, counts, truth_noise, truth_galactic,
-        m0_total, m0_lower, m0_upper, m1_noise, m1_galactic, m1_total,
+        surface_total, surface_lower, surface_upper, h_para_noise, h_para_galactic, h_para_total,
         whitening_mask,
     )
     if has_m1_posterior:
-        metrics["m1_pointwise_90_coverage"] = float(np.mean(
-            (truth_total[valid] >= m1_total_lower[valid])
-            & (truth_total[valid] <= m1_total_upper[valid])
+        metrics["h_para_pointwise_90_coverage"] = float(np.mean(
+            (truth_total[valid] >= h_para_total_lower[valid])
+            & (truth_total[valid] <= h_para_total_upper[valid])
         ))
 
     def time_median(values: np.ndarray) -> np.ndarray:
@@ -206,22 +206,22 @@ def plot_component_model_comparison(
     total_axis = fig.add_subplot(grid[0, 0])
     component_axis = fig.add_subplot(grid[0, 1])
     text_axis = fig.add_subplot(grid[0, 2])
-    m0_axis = fig.add_subplot(grid[1, 0])
-    m1_axis = fig.add_subplot(grid[1, 1], sharex=m0_axis, sharey=m0_axis)
+    surface_axis = fig.add_subplot(grid[1, 0])
+    h_para_axis = fig.add_subplot(grid[1, 1], sharex=surface_axis, sharey=surface_axis)
     residual_axis = fig.add_subplot(grid[1, 2])
 
     total_axis.loglog(frequency_hz, time_median(truth_total), color="k", label="truth total")
-    total_axis.loglog(frequency_hz, time_median(m0_total), color="C0", label="M0 posterior mean")
+    total_axis.loglog(frequency_hz, time_median(surface_total), color="C0", label="surface posterior mean")
     total_axis.fill_between(
-        frequency_hz, time_median(m0_lower), time_median(m0_upper),
-        color="C0", alpha=0.2, label="M0 pointwise 90% band",
+        frequency_hz, time_median(surface_lower), time_median(surface_upper),
+        color="C0", alpha=0.2, label="surface pointwise 90% band",
     )
-    m1_total_label = "M1 posterior median" if has_m1_posterior else "M1 MAP total"
-    total_axis.loglog(frequency_hz, time_median(m1_total), color="C3", label=m1_total_label)
+    h_para_total_label = "H_para posterior median" if has_m1_posterior else "H_para MAP total"
+    total_axis.loglog(frequency_hz, time_median(h_para_total), color="C3", label=h_para_total_label)
     if has_m1_posterior:
         total_axis.fill_between(
-            frequency_hz, time_median(m1_total_lower), time_median(m1_total_upper),
-            color="C3", alpha=0.18, label="M1 pointwise 90% band",
+            frequency_hz, time_median(h_para_total_lower), time_median(h_para_total_upper),
+            color="C3", alpha=0.18, label="H_para pointwise 90% band",
         )
     total_axis.set(xlabel="frequency [Hz]", ylabel=r"PSD [Hz$^2$/Hz]", title="Total-spectrum recovery")
     shade_whitening_omissions(total_axis)
@@ -229,24 +229,24 @@ def plot_component_model_comparison(
 
     component_axis.loglog(frequency_hz, time_median(truth_noise), "--", color="C0", label="noise truth")
     component_axis.loglog(
-        frequency_hz, time_median(m1_noise), color="C0",
-        label="M1 noise posterior median" if has_m1_posterior else "M1 noise MAP",
+        frequency_hz, time_median(h_para_noise), color="C0",
+        label="H_para noise posterior median" if has_m1_posterior else "H_para noise MAP",
     )
     component_axis.loglog(frequency_hz, time_median(truth_galactic), "--", color="C1", label="Galactic truth")
     component_axis.loglog(
-        frequency_hz, time_median(m1_galactic), color="C1",
-        label="M1 Galactic posterior median" if has_m1_posterior else "M1 Galactic MAP",
+        frequency_hz, time_median(h_para_galactic), color="C1",
+        label="H_para Galactic posterior median" if has_m1_posterior else "H_para Galactic MAP",
     )
     if has_m1_posterior:
         component_axis.fill_between(
-            frequency_hz, time_median(m1_noise_lower), time_median(m1_noise_upper),
+            frequency_hz, time_median(h_para_noise_lower), time_median(h_para_noise_upper),
             color="C0", alpha=0.16,
         )
         component_axis.fill_between(
-            frequency_hz, time_median(m1_galactic_lower), time_median(m1_galactic_upper),
+            frequency_hz, time_median(h_para_galactic_lower), time_median(h_para_galactic_upper),
             color="C1", alpha=0.16,
         )
-    component_axis.set(xlabel="frequency [Hz]", ylabel=r"PSD [Hz$^2$/Hz]", title="M1 component recovery")
+    component_axis.set(xlabel="frequency [Hz]", ylabel=r"PSD [Hz$^2$/Hz]", title="H_para component recovery")
     shade_whitening_omissions(component_axis)
     component_axis.legend(fontsize=7)
 
@@ -255,38 +255,38 @@ def plot_component_model_comparison(
         "Matched fit-domain diagnostics",
         f"A_gal = {galactic_amplitude:.4f}",
         f"f_knee = {1e3 * f_knee_hz:.4f} mHz",
-        f"M0 total median |log error| = {metrics['m0_total_median_abs_log_error']:.3f}",
-        f"M1 total median |log error| = {metrics['m1_total_median_abs_log_error']:.3f}",
-        f"M1 noise error (>=3% share) = {metrics['m1_noise_median_abs_log_error_visible']:.3f}",
-        f"M1 Galactic error (>=3% share) = {metrics['m1_galactic_median_abs_log_error_visible']:.3f}",
+        f"surface total median |log error| = {metrics['surface_total_median_abs_log_error']:.3f}",
+        f"H_para total median |log error| = {metrics['h_para_total_median_abs_log_error']:.3f}",
+        f"H_para noise error (>=3% share) = {metrics['h_para_noise_median_abs_log_error_visible']:.3f}",
+        f"H_para Galactic error (>=3% share) = {metrics['h_para_galactic_median_abs_log_error_visible']:.3f}",
         (
             "continuum mean z^2: "
-            f"M0={metrics['m0_continuum_mean_z2']:.3f}, "
-            f"M1={metrics['m1_continuum_mean_z2']:.3f}"
+            f"surface={metrics['surface_continuum_mean_z2']:.3f}, "
+            f"H_para={metrics['h_para_continuum_mean_z2']:.3f}"
         ),
-        f"M0 pointwise 90% coverage = {metrics['m0_pointwise_90_coverage']:.1%}",
+        f"surface pointwise 90% coverage = {metrics['surface_pointwise_90_coverage']:.1%}",
         *(
-            [f"M1 pointwise 90% coverage = {metrics['m1_pointwise_90_coverage']:.1%}"]
+            [f"H_para pointwise 90% coverage = {metrics['h_para_pointwise_90_coverage']:.1%}"]
             if has_m1_posterior else []
         ),
         (
-            f"M1 NUTS: div={int(m1_diagnostics['divergences'])}, "
-            f"max R-hat={m1_diagnostics['max_r_hat']:.3f}"
-            if has_m1_posterior and m1_diagnostics is not None
-            else "M1 is a conditional MAP fit; no interval is shown."
+            f"H_para NUTS: div={int(h_para_diagnostics['divergences'])}, "
+            f"max R-hat={h_para_diagnostics['max_r_hat']:.3f}"
+            if has_m1_posterior and h_para_diagnostics is not None
+            else "H_para is a conditional MAP fit; no interval is shown."
         ),
     ]
     text_axis.text(0.0, 1.0, "\n".join(lines), va="top", family="monospace", fontsize=9)
 
     errors = (
-        np.where(valid, np.log10(m0_total / truth_total), np.nan),
-        np.where(valid, np.log10(m1_total / truth_total), np.nan),
+        np.where(valid, np.log10(surface_total / truth_total), np.nan),
+        np.where(valid, np.log10(h_para_total / truth_total), np.nan),
     )
     finite = np.concatenate([error[np.isfinite(error)] for error in errors])
     limit = max(0.05, float(np.quantile(np.abs(finite), 0.99)))
     for axis, error, title in (
-        (m0_axis, errors[0], "M0 log10(total / truth)"),
-        (m1_axis, errors[1], "M1 log10(total / truth)"),
+        (surface_axis, errors[0], "surface log10(total / truth)"),
+        (h_para_axis, errors[1], "H_para log10(total / truth)"),
     ):
         image = axis.pcolormesh(
             time_days, frequency_hz, error.T, shading="auto", cmap="coolwarm",
@@ -294,19 +294,19 @@ def plot_component_model_comparison(
         )
         axis.set(xlabel="time [days]", title=title, yscale="log")
         fig.colorbar(image, ax=axis, pad=0.01, label="dex")
-    m0_axis.set_ylabel("frequency [Hz]")
+    surface_axis.set_ylabel("frequency [Hz]")
 
     diagnostic_valid = valid if whitening_mask is None else valid & np.asarray(whitening_mask, dtype=bool)
     diagnostic_counts = np.where(diagnostic_valid, counts, 0.0)
     diagnostic_denominator = np.sum(diagnostic_counts, axis=1)
     weighted_m0_z2 = np.nansum(
-        diagnostic_counts * observed_total / m0_total, axis=1
+        diagnostic_counts * observed_total / surface_total, axis=1
     ) / diagnostic_denominator
     weighted_m1_z2 = np.nansum(
-        diagnostic_counts * observed_total / m1_total, axis=1
+        diagnostic_counts * observed_total / h_para_total, axis=1
     ) / diagnostic_denominator
-    residual_axis.plot(time_days, weighted_m0_z2, marker="o", ms=3, label="M0")
-    residual_axis.plot(time_days, weighted_m1_z2, marker="o", ms=3, label="M1")
+    residual_axis.plot(time_days, weighted_m0_z2, marker="o", ms=3, label="surface")
+    residual_axis.plot(time_days, weighted_m1_z2, marker="o", ms=3, label="H_para")
     residual_axis.axhline(1.0, color="k", ls="--", lw=1)
     residual_axis.set(
         xlabel="time [days]", ylabel=r"continuum mean $z^2$",
@@ -314,8 +314,8 @@ def plot_component_model_comparison(
     )
     residual_axis.legend(fontsize=8)
 
-    comparison_name = "M1 response-informed component posterior" if has_m1_posterior else "M1 response-informed component MAP"
-    fig.suptitle(f"X2: M0 total P-spline posterior versus {comparison_name}", y=1.02)
+    comparison_name = "H_para response-informed component posterior" if has_m1_posterior else "H_para response-informed component MAP"
+    fig.suptitle(f"X2: surface total P-spline posterior versus {comparison_name}", y=1.02)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -332,7 +332,7 @@ def plot_m1_parameter_posterior(
     injected_amplitude: float | None = None,
     injected_f_knee_hz: float | None = None,
 ) -> None:
-    """Save compact M1 marginal, joint, and smoothing-precision diagnostics."""
+    """Save compact H_para marginal, joint, and smoothing-precision diagnostics."""
     output_path = Path(output_path)
     amplitude = np.asarray(amplitude_draws, dtype=float).ravel()
     knee_mhz = 1.0e3 * np.asarray(f_knee_draws_hz, dtype=float).ravel()
@@ -342,7 +342,7 @@ def plot_m1_parameter_posterior(
         amplitude.size == knee_mhz.size == phi_time.size == phi_frequency.size
         and amplitude.size > 1
     ):
-        raise ValueError("all M1 parameter-draw arrays must have the same non-trivial size")
+        raise ValueError("all H_para parameter-draw arrays must have the same non-trivial size")
 
     fig, axes = plt.subplots(2, 2, figsize=(9, 7), constrained_layout=True)
     axes[0, 0].scatter(amplitude, knee_mhz, s=7, alpha=0.22, edgecolors="none")
@@ -386,7 +386,7 @@ def plot_m1_parameter_posterior(
         title="Noise-residual spline smoothness",
     )
     axes[1, 1].legend(fontsize=8)
-    fig.suptitle("X2 M1 NUTS parameter posterior", y=1.02)
+    fig.suptitle("X2 H_para NUTS parameter posterior", y=1.02)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)

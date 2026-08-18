@@ -1,15 +1,15 @@
-# ESA-orbit LISA M0 PSD analysis: results and findings
+# ESA-orbit LISA surface PSD analysis: results and findings
 
 **Analysis status:** superseded pending corrected coarse-reference reruns
 **Last updated:** 2026-08-13  
-**Scientific scope:** estimation of the total time-varying PSD (M0), without
+**Scientific scope:** estimation of the total time-varying PSD (H_agn/H_orb), without
 separating instrumental noise and the Galactic component
 
 > **Correction notice (2026-08-13):** the response-informed coarse likelihood
 > averaged `log(R)` and reused the geometric-mean reference in its quadratic
 > term. The correct sufficient statistic is `sum(w^2/R)`, with division by the
 > cell-level reference before block summation. The shared library is fixed and
-> the continuous and seven-day-gap anchors are being rerun. All numerical M0
+> the continuous and seven-day-gap anchors are being rerun. All numerical surface-study
 > results below document the superseded pre-fix analysis and must not be quoted
 > as current results. See
 > [`COARSE_REFERENCE_OFFSET_CORRECTION.md`](COARSE_REFERENCE_OFFSET_CORRECTION.md).
@@ -66,7 +66,7 @@ cannot follow this modulation. The middle panel below shows that most of the
 stationary model's error is concentrated at low frequencies, while the
 right-hand panel shows the incremental predictive value of the interaction.
 
-![Continuous nested-model results](esa_m0_publication_results/esa_x2_continuous_nested.png)
+![Continuous nested-model results](publication_results/esa_x2_continuous_nested.png)
 
 The figure uses three distinct comparisons:
 
@@ -89,7 +89,7 @@ The gap analysis separates three questions that are otherwise easy to conflate:
   coefficients without truth;
 - ordinary held-out prediction away from the gap.
 
-![Gap robustness results](esa_m0_publication_results/esa_x2_gap_robustness.png)
+![Gap robustness results](publication_results/esa_x2_gap_robustness.png)
 
 The blind boundary result selects the buffer. The gap-interior truth error is a
 stress test only and was not used to choose the buffer. This distinction is
@@ -409,7 +409,7 @@ The following claims would overstate the evidence:
 
 - calibrated nominal 90% coverage across repeated realizations;
 - a Bayes factor for stationarity versus time variation;
-- separate recovery of instrumental noise and the Galactic PSD (M1);
+- separate recovery of instrumental noise and the Galactic PSD (H_para);
 - performance across arbitrary LISA channels or TDI combinations;
 - generalization to external LDC data;
 - robustness to narrow or structurally incorrect reference features outside
@@ -448,9 +448,9 @@ empirical coverage.
 3. Apply the frozen method to one external LDC-style dataset using only released
    TDI data, timestamps/gaps, orbit information, and public nominal noise
    curves.
-4. Consider A/E/T replication only if the manuscript expands beyond the X2 M0
+4. Consider A/E/T replication only if the manuscript expands beyond the X2 surface
    demonstration.
-5. Treat M1 component separation as a separate identifiable model, not as two
+5. Treat H_para component separation as a separate identifiable model, not as two
    unrestricted positive P-spline surfaces.
 
 ## Further questions
@@ -476,11 +476,11 @@ The main implementation and record are:
   truth metrics, and summary-only sensitivity mode;
 - `lisa_data_generation/plot_esa_method_improvements.py`: publication figures
   and consolidated summary;
-- `lisa_data_generation/esa_m0_publication_results/esa_x2_publication_summary.json`:
+- `lisa_data_generation/publication_results/esa_x2_publication_summary.json`:
   machine-readable selected results;
-- `lisa_data_generation/ESA_M0_PUBLICATION_PROTOCOL.md`: frozen analysis
+- `lisa_data_generation/PUBLICATION_PROTOCOL.md`: frozen analysis
   protocol and claim boundary;
-- `lisa_data_generation/ESA_M0_METHOD_IMPROVEMENTS.md`: implementation and
+- `lisa_data_generation/METHOD_IMPROVEMENTS.md`: implementation and
   method-tuning audit;
 - `wdm_psd/notes/WDM_PROJECTION_VALIDITY.md`: compact-support and curvature
   validation.

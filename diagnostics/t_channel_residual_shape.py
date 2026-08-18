@@ -19,7 +19,7 @@ import numpy as np
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation")
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/wdm_psd")
 
-from run_aet_diagonal_pilot import (
+from run_component_study import (
     aet_noise_transfer_functions,
     bin_channels,
     oms_theory_psd,

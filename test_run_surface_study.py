@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from esa_m0_study import (
+from run_surface_study import (
     analysis_masks,
     analysis_row_split,
     blind_whitening_diagnostics,

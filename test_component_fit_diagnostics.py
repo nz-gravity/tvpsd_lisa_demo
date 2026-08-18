@@ -30,13 +30,13 @@ def test_recovery_metrics_separate_total_and_component_accuracy():
         truth_total, 0.9 * truth_total, 1.1 * truth_total,
         noise, galactic,
     )
-    assert metrics["m0_total_median_abs_log_error"] == 0.0
-    assert metrics["m1_total_median_abs_log_error"] == 0.0
-    assert metrics["m1_noise_median_abs_log_error_visible"] == 0.0
-    assert metrics["m1_galactic_median_abs_log_error_visible"] == 0.0
-    assert metrics["m0_continuum_mean_z2"] == 1.0
-    assert metrics["m1_continuum_mean_z2"] == 1.0
-    assert metrics["m0_pointwise_90_coverage"] == 1.0
+    assert metrics["surface_total_median_abs_log_error"] == 0.0
+    assert metrics["h_para_total_median_abs_log_error"] == 0.0
+    assert metrics["h_para_noise_median_abs_log_error_visible"] == 0.0
+    assert metrics["h_para_galactic_median_abs_log_error_visible"] == 0.0
+    assert metrics["surface_continuum_mean_z2"] == 1.0
+    assert metrics["h_para_continuum_mean_z2"] == 1.0
+    assert metrics["surface_pointwise_90_coverage"] == 1.0
 
 
 def test_whitening_mask_does_not_remove_cells_from_fit_metrics():
@@ -62,14 +62,14 @@ def test_whitening_mask_does_not_remove_cells_from_fit_metrics():
     )
     assert metrics["fit_effective_cells"] == 3.0
     assert metrics["whitening_effective_cells"] == 2.0
-    assert metrics["m0_continuum_mean_z2"] == 1.0
+    assert metrics["surface_continuum_mean_z2"] == 1.0
 
 
 def test_time_block_log_pilot_is_truth_free_and_robust():
     """Pilot must come from the data and be steadier than a single time row."""
     import sys
     sys.path.insert(0, ".")
-    from run_aet_diagonal_pilot import time_block_log_pilot
+    from run_component_study import time_block_log_pilot
 
     rng = np.random.default_rng(0)
     # Scaled to the same ratios as the real AET pilot grid (nt=32, ~39000
@@ -112,7 +112,7 @@ def test_truth_free_pilot_produces_a_coarse_bin_layout():
     """
     import sys
     sys.path.insert(0, ".")
-    from run_aet_diagonal_pilot import time_block_log_pilot
+    from run_component_study import time_block_log_pilot
     from tv_pspline_psd.inference import adaptive_frequency_bin_starts
 
     rng = np.random.default_rng(1)

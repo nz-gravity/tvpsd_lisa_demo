@@ -1,4 +1,4 @@
-"""Posterior conditioning of the M1 spline block, exactly, without MCMC.
+"""Posterior conditioning of the H_para spline block, exactly, without MCMC.
 
 For the Whittle likelihood with a log link, the Fisher information w.r.t.
 Lambda = log S is counts/2 per cell. With Lambda = B_t W B_f^T and counts

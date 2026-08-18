@@ -1,4 +1,4 @@
-"""Full-band M0 WDM/P-spline study for the archived ESA-orbit LISA data.
+"""Full-band H_agn/H_orb WDM/P-spline study for the archived ESA-orbit LISA data.
 
 The study keeps the requested 1e-4--1e-1 Hz domain visible. The analytic
 response and simulation truth are projected through the compact
@@ -54,7 +54,6 @@ from tv_pspline_psd import (  # noqa: E402
     wdm_frequency_projection_grid,
 )
 from tv_pspline_psd.lisa_aet import (  # noqa: E402
-    diagonal_xyz_psd_to_aet,
     xyz_covariance_to_aet_diagonal,
     xyz_to_aet_series,
 )
@@ -77,6 +76,14 @@ WDM_PROJECTION_CACHE_VERSION = 1
 # zero-XYZ-cross-spectrum generation contract.
 XYZ_CHANNELS = ("X2", "Y2", "Z2")
 AET_CHANNELS = ("A", "E", "T")
+
+# The two hypotheses this module fits, in order of how much physics they
+# assume. H_para (the physical component separation) lives in
+# run_component_study.py and shares this module's grid, cells and splits.
+SURFACE_HYPOTHESES = {
+    "agn": "H_agn",
+    "orb": "H_orb",
+}
 ALL_CHANNELS = XYZ_CHANNELS + AET_CHANNELS
 
 
@@ -1121,16 +1128,18 @@ def _truth_cache_matches(
     )
 
 
-def _channel_truth(dataset: np.ndarray, channel: str) -> np.ndarray:
-    """Select one channel's PSD from an archived ``(X2, Y2, Z2)`` truth array.
+def _channel_truth(covariance: np.ndarray, channel: str) -> np.ndarray:
+    """Select one channel's truth PSD from an archived XYZ covariance.
 
-    AET channels rotate under the same zero-XYZ-cross-spectrum contract as
-    ``_channel_diagonal``: appropriate for this controlled archive, not a
-    physical multichannel response (see ``tv_pspline_psd.lisa_aet.diagonal_xyz_psd_to_aet``).
+    ``covariance`` is a ``truth/*_csd`` array of shape ``(time, frequency, 3,
+    3)``. AET channels rotate the full covariance exactly as
+    ``_channel_diagonal`` does, so the T-channel truth carries the physical
+    cross-spectrum cancellation instead of the diagonal-only approximation.
     """
     if channel in XYZ_CHANNELS:
-        return dataset[XYZ_CHANNELS.index(channel)]
-    return diagonal_xyz_psd_to_aet(dataset)[AET_CHANNELS.index(channel)]
+        index = XYZ_CHANNELS.index(channel)
+        return np.real(covariance[..., index, index])
+    return xyz_covariance_to_aet_diagonal(covariance)[..., AET_CHANNELS.index(channel)]
 
 
 def load_or_build_truth(
@@ -1176,8 +1185,8 @@ def load_or_build_truth(
     with h5py.File(archive_path, "r") as hdf:
         source_t = hdf["truth/time_tcb"][:]
         source_f = hdf["truth/frequency_hz"][:]
-        source_galactic = _channel_truth(hdf["truth/galactic_psd"][:], channel)
-        source_noise = _channel_truth(hdf["truth/noise_psd"][:], channel)
+        source_galactic = _channel_truth(hdf["truth/galactic_csd"][:], channel)
+        source_noise = _channel_truth(hdf["truth/noise_csd"][:], channel)
     galactic = projected_interpolated_positive_surface(
         source_galactic,
         source_t,
@@ -1330,7 +1339,7 @@ def save_chain_archive(
 
 
 def run(args: argparse.Namespace) -> Path:
-    """Execute one continuous or one gapped ESA-orbit M0 fit for ``args.channel``."""
+    """Execute one continuous or one gapped ESA-orbit surface fit for ``args.channel``."""
     if min(args.offset_oms_scale, args.offset_tm_scale, args.offset_pivot_hz) <= 0.0:
         raise ValueError("response-offset scales and pivot frequency must be positive")
     if args.single_gap_days <= 0.0 or args.gap_buffer_pixels < 0.0:
@@ -1854,6 +1863,9 @@ def run(args: argparse.Namespace) -> Path:
         "data_scale_source": (
             "median retained training WDM power divided by median chi-square_1"
         ),
+        # Downstream plotting and diagnostics read this label rather than
+        # inferring the hypothesis from which flags happened to be passed.
+        "hypothesis": SURFACE_HYPOTHESES[args.hypothesis],
         "reference_psd_offset": {
             "applied": bool(args.response_offset),
             "reference": (
@@ -2129,14 +2141,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-tree-depth", type=int, default=12)
     parser.add_argument("--target-accept", type=float, default=0.95)
     parser.add_argument(
-        "--reference-psd-offset",
-        "--response-offset",
-        dest="response_offset",
-        action="store_true",
+        "--hypothesis",
+        choices=tuple(SURFACE_HYPOTHESES),
+        default="agn",
         help=(
-            "Fit a multiplicative P-spline residual around the nominal analytic "
-            "instrumental reference PSD. The --response-offset spelling is retained "
-            "as a backwards-compatible alias."
+            "Which surface hypothesis to fit. 'agn' (H_agn) fits a free "
+            "time-varying total surface and assumes nothing. 'orb' (H_orb) "
+            "fits a multiplicative P-spline residual around the nominal "
+            "analytic instrumental reference PSD, and so assumes the orbits, "
+            "the TDI convention and the transfer geometry."
         ),
     )
     parser.add_argument("--offset-oms-scale", type=float, default=1.0)
@@ -2156,7 +2169,11 @@ def parse_args() -> argparse.Namespace:
         help="Write metrics JSON without the large posterior-surface NPZ archive.",
     )
     parser.add_argument("--no-progress", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    # H_orb is exactly H_agn plus the analytic reference offset, so the rest of
+    # the module keeps its single boolean rather than branching on the label.
+    args.response_offset = args.hypothesis == "orb"
+    return args
 
 
 if __name__ == "__main__":

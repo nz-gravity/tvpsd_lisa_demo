@@ -1,4 +1,4 @@
-"""Publication figures and compact summary for the ESA-orbit X2 M0 study."""
+"""Publication figures and compact summary for the ESA-orbit X2 surface study."""
 
 from __future__ import annotations
 
@@ -365,7 +365,7 @@ def write_summary(continuous: dict[str, np.ndarray], schedules: list[dict[str, n
             }
         )
     summary = {
-        "analysis": "ESA-orbit X2 M0 total PSD",
+        "analysis": "ESA-orbit X2 surface total PSD",
         "frequency_contract": continuous_metrics["requested_frequency_hz"],
         "realized_frequency_hz": continuous_metrics["realized_frequency_hz"],
         "null_notch_fraction_full": continuous_metrics["response_mask_fraction_full"],

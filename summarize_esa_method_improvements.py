@@ -1,4 +1,4 @@
-"""Summarize the locked free and response-aware ESA M0 fits."""
+"""Summarize the locked free and response-aware ESA surface fits."""
 
 from __future__ import annotations
 

@@ -21,7 +21,7 @@ HERE = Path("/Users/avi/Documents/projects/wdm_psd/lisa_data_generation")
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "wdm_psd"))
 
-from run_aet_diagonal_pilot import (
+from run_component_study import (
     SECONDS_PER_YEAR,
     CARRIER_FREQUENCY_HZ,
     load_esa_orbits,
@@ -147,7 +147,7 @@ def penalized_fit(log_target, weight):
     return coefficients, residual, coeff_in_prior_sigmas
 
 
-print("=== A: single scalar reference per channel (current M1) ===")
+print("=== A: single scalar reference per channel (current H_para) ===")
 for c, name in enumerate(AET_CHANNELS):
     level = float(np.exp(np.median(np.log(total_binned[c][fit_valid[c]]))))
     log_target = np.log(total_binned[c] / level)

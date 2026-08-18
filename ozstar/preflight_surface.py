@@ -1,4 +1,4 @@
-"""Fast OzSTAR preflight for projected-reference M0 publication runs."""
+"""Fast OzSTAR preflight for projected-reference H_orb publication runs."""
 
 from __future__ import annotations
 
@@ -15,13 +15,13 @@ jax.config.update("jax_enable_x64", True)
 
 # Python puts this script's own directory (ozstar/) on sys.path, not the CWD,
 # so the study modules in the parent directory are not importable by default
-# even when sbatch runs `cd "$LISA_DIR"; python ozstar/preflight_m0.py`.
+# even when sbatch runs `cd "$LISA_DIR"; python ozstar/preflight_surface.py`.
 STUDY_ROOT = Path(__file__).resolve().parent.parent
 if str(STUDY_ROOT) not in sys.path:
     sys.path.insert(0, str(STUDY_ROOT))
 
 import tv_pspline_psd  # noqa: E402
-from esa_m0_study import (  # noqa: E402
+from run_surface_study import (  # noqa: E402
     analysis_masks,
     lisa_like_gaps,
     analytic_channel_noise_psd,
@@ -113,10 +113,10 @@ def main() -> None:
     # posterior convergence.
     rng = np.random.default_rng(42)
     n_time, n_frequency = 8, 9
-    time = np.linspace(0.0, 1.0, n_time)
+    time_grid = np.linspace(0.0, 1.0, n_time)
     frequency = np.linspace(0.01, 0.1, n_frequency)
     reference_frequency = np.resize(np.array([1.0e-4, 1.0, 25.0]), n_frequency)
-    reference_surface = np.exp(0.2 * time[:, None]) * reference_frequency[None, :]
+    reference_surface = np.exp(0.2 * time_grid[:, None]) * reference_frequency[None, :]
     residual = rng.normal(size=(1, n_time, n_frequency))
     physical = residual * np.sqrt(reference_surface)[None, :, :]
     config = PSplineConfig(
@@ -130,7 +130,7 @@ def main() -> None:
     )
     fit = fit_log_pspline_surface(
         physical,
-        time,
+        time_grid,
         frequency,
         config=config,
         time_bin=2,
@@ -208,11 +208,11 @@ def main() -> None:
             "production-grid preflight did not resolve a point-evaluation null"
         )
 
-    # M1 reaches the same projected estimand through two thin AET wrappers
+    # H_para reaches the same projected estimand through two thin AET wrappers
     # around the functions checked above. Verify them here: the fit takes about
     # an hour, and a shape or normalization error would otherwise surface only
     # in the final metrics.
-    from run_aet_diagonal_pilot import (  # noqa: E402
+    from run_component_study import (  # noqa: E402
         projected_aet_interpolated_surface,
     )
 
@@ -246,29 +246,29 @@ def main() -> None:
 
     # The three-model gap comparison is only meaningful if all three jobs see
     # the SAME outages. The schedule is lisa_like_gaps(t_obs_s, seed), and
-    # t_obs_s is derived independently in esa_m0_study and
-    # run_aet_diagonal_pilot by two separate copies of wdm_valid_length. They
+    # t_obs_s is derived independently in run_surface_study and
+    # run_component_study by two separate copies of wdm_valid_length. They
     # agree today; nothing enforces it. Check here, because a divergence would
     # silently turn "same data, different models" into three different
     # datasets, with no error raised anywhere.
     started = _stage("AET projection wrapper check", started)
 
-    import run_aet_diagonal_pilot as m1  # noqa: E402
+    import run_component_study as h_para  # noqa: E402
 
-    if m1.wdm_valid_length(requested_samples, nt) != n_total:
+    if h_para.wdm_valid_length(requested_samples, nt) != n_total:
         raise RuntimeError(
             f"record length differs between the runners at nt={nt}: "
-            f"M0 {n_total} vs M1 {m1.wdm_valid_length(requested_samples, nt)}; "
+            f"surface {n_total} vs H_para {h_para.wdm_valid_length(requested_samples, nt)}; "
             "the lisa_like gap schedules would not match"
         )
     for seed in (1, 2):
-        if lisa_like_gaps(duration, seed) != m1.lisa_like_gaps(duration, seed):
+        if lisa_like_gaps(duration, seed) != h_para.lisa_like_gaps(duration, seed):
             raise RuntimeError(
                 f"lisa_like gap schedules differ between runners at seed={seed}"
             )
     shared_schedule = lisa_like_gaps(duration, 1)
 
-    _stage("import of run_aet_diagonal_pilot and gap-schedule identity", started)
+    _stage("import of run_component_study and gap-schedule identity", started)
 
     print(f"[preflight passed] package={imported}")
     print(f"[preflight passed] archive={archive}")

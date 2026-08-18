@@ -1,4 +1,4 @@
-"""Why is M1 slow? Compare noise-model parameterizations on synthetic Whittle
+"""Why is H_para slow? Compare noise-model parameterizations on synthetic Whittle
 data drawn from the pilot's own truth surfaces."""
 
 import sys

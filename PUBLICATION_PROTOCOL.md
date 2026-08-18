@@ -1,7 +1,7 @@
-# ESA-orbit M0 publication analysis protocol
+# ESA-orbit the surface study publication analysis protocol
 
 The consolidated reader-facing account of the superseded pre-fix analysis is
-[`ESA_M0_RESULTS_AND_FINDINGS.md`](ESA_M0_RESULTS_AND_FINDINGS.md). This file
+[`RESULTS_AND_FINDINGS.md`](RESULTS_AND_FINDINGS.md). This file
 retains the prospective protocol and claim rules for the corrected reruns.
 
 Status: corrected coarse-reference likelihood and WDM-projected references
@@ -105,4 +105,4 @@ corrections. Replacement runs must pass the same gates before manuscript use.
   coverage and run-to-run variability;
 - one external LDC-style dataset using only released data, orbit files, and
   public nominal noise curves;
-- optional A/E/T replication if component separation is promoted beyond M0.
+- optional A/E/T replication if component separation is promoted beyond the surface study.

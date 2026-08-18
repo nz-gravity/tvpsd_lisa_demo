@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from run_aet_diagonal_pilot import (
+from run_component_study import (
     AET_CHANNELS,
     heldout_binned_diagnostics,
     recovery_metrics,
@@ -65,16 +65,16 @@ def test_heldout_binned_diagnostics_is_calibrated_and_proper():
             < scores["mean_whittle_log_score"]
         )
 
-    # At one coefficient per cell this must reduce to M0's coefficient form,
+    # At one coefficient per cell this must reduce to the surface study's coefficient form,
     # which is what makes the two ladders' scores comparable.
     coefficients = rng.normal(0.0, 1.0, shape) * np.sqrt(surface)
     single = heldout_binned_diagnostics(
         coefficients**2, np.ones(shape), surface, mask
     )
-    m0_form = float(
+    surface_form = float(
         np.mean(-0.5 * (np.log(surface) + coefficients**2 / surface))
     )
-    assert abs(single["mean_whittle_log_score"] - m0_form) < 1.0e-12
+    assert abs(single["mean_whittle_log_score"] - surface_form) < 1.0e-12
 
     # Zero-count cells are excluded rather than divided by.
     zeroed = counts.copy()

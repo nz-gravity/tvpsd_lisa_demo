@@ -3,6 +3,8 @@
 
 results/
 
+
+combined_esa_xyz.h5.prefix-backup
 # Archives and simulation inputs
 *.h5
 noise2a/

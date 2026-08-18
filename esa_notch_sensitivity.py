@@ -1,4 +1,4 @@
-"""Score locked ESA M0 fits over a grid of response-notch definitions."""
+"""Score locked ESA surface fits over a grid of response-notch definitions."""
 
 from __future__ import annotations
 

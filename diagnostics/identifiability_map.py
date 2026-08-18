@@ -19,20 +19,20 @@ import numpy as np
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation")
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/wdm_psd")
 
-from run_aet_diagonal_pilot import (
+from run_component_study import (
     aet_noise_transfer_functions,
     interpolate_surface,
     oms_theory_psd,
     tm_theory_psd,
 )
-from tv_pspline_psd.lisa_aet import diagonal_xyz_psd_to_aet
+from tv_pspline_psd.lisa_aet import xyz_covariance_to_aet_diagonal
 
 HERE = "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation"
 with h5py.File(f"{HERE}/combined_esa_xyz.h5", "r") as hdf:
     t0 = float(hdf.attrs["t0_tcb"])
     truth_time = hdf["truth/time_tcb"][:]
     truth_frequency = hdf["truth/frequency_hz"][:]
-    galactic_xyz = hdf["truth/galactic_psd"][:]
+    galactic_xyz = hdf["truth/galactic_csd"][:]
 
 frequency = np.geomspace(1e-4, 2e-2, 400)
 time = np.linspace(truth_time[0], truth_time[-1], 30)
@@ -43,7 +43,11 @@ transfer_tm, transfer_oms = aet_noise_transfer_functions(
 tm_part = transfer_tm * tm_theory_psd(frequency)[None, None, :]
 oms_part = transfer_oms * oms_theory_psd(frequency)[None, None, :]
 galactic = interpolate_surface(
-    diagonal_xyz_psd_to_aet(galactic_xyz), truth_time, truth_frequency, time, frequency
+    np.moveaxis(xyz_covariance_to_aet_diagonal(galactic_xyz), 2, 0),
+    truth_time,
+    truth_frequency,
+    time,
+    frequency,
 )
 total = tm_part + oms_part + galactic
 

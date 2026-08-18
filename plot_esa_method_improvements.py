@@ -1,4 +1,4 @@
-"""Publication figures for the selected ESA-orbit X2 nested M0 analysis."""
+"""Publication figures for the selected ESA-orbit X2 nested surface analysis."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ GAP_ANCHOR = (
     / "duration7_buffer1"
     / "esa_x2_m0_gapped_single_7d_buffer1_reference_offset_nested.npz"
 )
-OUTPUT = HERE / "esa_m0_publication_results"
+OUTPUT = HERE / "publication_results"
 
 BLUE = "#0072B2"
 ORANGE = "#D55E00"
@@ -301,7 +301,7 @@ def write_summary(continuous: dict[str, np.ndarray], rows: list[dict], path: Pat
             }
         )
     summary = {
-        "scope": "single archived ESA-orbit X2 realization; M0 total PSD",
+        "scope": "single archived ESA-orbit X2 realization; surface total PSD",
         "data": {
             "archive": continuous_metrics["archive"],
             "orbits": continuous_metrics["orbits"],

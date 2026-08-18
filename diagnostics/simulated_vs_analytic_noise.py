@@ -1,6 +1,6 @@
 """Does the archive's SIMULATED noise match the ANALYTIC noise model?
 
-Everything in this study validates against analytic OMS/TM, and the M1 prior
+Everything in this study validates against analytic OMS/TM, and the H_para prior
 is centred on it. But the archive's noise came from a simulator. If the two
 differ, the fit follows the data (correctly) and every residual against the
 analytic 'truth' is offset -- with the mismatch pushed into whichever free
@@ -19,7 +19,7 @@ import numpy as np
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation")
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/wdm_psd")
 
-from run_aet_diagonal_pilot import (
+from run_component_study import (
     aet_noise_transfer_functions,
     bin_channels,
     oms_theory_psd,

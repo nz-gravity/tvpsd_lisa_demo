@@ -14,7 +14,7 @@ import numpy as np
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/lisa_data_generation")
 sys.path.insert(0, "/Users/avi/Documents/projects/wdm_psd/wdm_psd")
 
-from run_aet_diagonal_pilot import (
+from run_component_study import (
     analytic_aet_noise_components_psd,
     interpolate_surface,
 )

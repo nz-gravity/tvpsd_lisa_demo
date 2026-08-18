@@ -1,4 +1,4 @@
-"""M0 vs M1 on identical data and identical spline machinery, one channel.
+"""H_agn vs H_para on identical data and identical spline machinery, one channel.
 
 Isolates what actually costs leapfrog steps: the component split, the spline
 parameterization, or the mass matrix.
@@ -147,9 +147,9 @@ def run(name, *, with_galaxy, n_time_knots=2, n_freq_knots=8, time_poly_degree=N
     )
 
 
-run("M0 total spline", with_galaxy=False)
-run("M1 noise spline + galaxy", with_galaxy=True)
-run("M1 dense_mass", with_galaxy=True, dense_mass=True)
-run("M1 non-centered", with_galaxy=True, centered=False)
-run("M1 stationary time (poly deg 1)", with_galaxy=True, time_poly_degree=1)
-run("M0 stationary time (poly deg 1)", with_galaxy=False, time_poly_degree=1)
+run("H_agn total spline", with_galaxy=False)
+run("H_para noise spline + galaxy", with_galaxy=True)
+run("H_para dense_mass", with_galaxy=True, dense_mass=True)
+run("H_para non-centered", with_galaxy=True, centered=False)
+run("H_para stationary time (poly deg 1)", with_galaxy=True, time_poly_degree=1)
+run("H_agn stationary time (poly deg 1)", with_galaxy=False, time_poly_degree=1)

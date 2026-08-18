@@ -1,6 +1,6 @@
-# ESA-orbit M0 method-improvement audit
+# ESA-orbit the surface study method-improvement audit
 
-See [`ESA_M0_RESULTS_AND_FINDINGS.md`](ESA_M0_RESULTS_AND_FINDINGS.md) for the
+See [`RESULTS_AND_FINDINGS.md`](RESULTS_AND_FINDINGS.md) for the
 superseded pre-fix scientific results. The coarse reference-offset correction
 and rerun plan are recorded in
 [`COARSE_REFERENCE_OFFSET_CORRECTION.md`](COARSE_REFERENCE_OFFSET_CORRECTION.md).
@@ -115,7 +115,7 @@ new production jobs finish.
 1. Repeated-realization empirical coverage and sampling-variability estimates.
 2. Final untouched evaluation after any further method tuning.
 3. Channel replication in Y2/Z2 or a physically complete multichannel study.
-## WDM projection question: corrected for the M0 grid
+## WDM projection question: corrected for the the surface study grid
 
 `wdm_psd/notes/WDM_PROJECTION_VALIDITY.md` directly measures the installed
 transform. Its Meyer frequency kernel is compactly supported within

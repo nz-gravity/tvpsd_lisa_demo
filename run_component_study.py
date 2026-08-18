@@ -40,12 +40,11 @@ from tv_pspline_psd.multichannel import (
 )
 from tv_pspline_psd.lisa_aet import (
     AET_CHANNELS,
-    diagonal_xyz_psd_to_aet,
     xyz_covariance_to_aet_diagonal,
     xyz_to_aet_series,
 )
 from component_fit_diagnostics import masked_frequency_bin_mean
-from esa_m0_study import (
+from run_surface_study import (
     analysis_row_split,
     gate_gaps,
     good_time_bins,
@@ -117,11 +116,11 @@ def analytic_aet_noise_components_psd(
 
     Each is ``(3, n_time, n_frequency)``, same order and units as the
     combined surface. Kept separate so callers can inspect them individually;
-    the M1 likelihood uses their sum as a fixed offset.
+    the H_para likelihood uses their sum as a fixed offset.
 
     ``frequency_chunk`` evaluates the analytic model in frequency slices
     instead of materialising the full ``(n_frequency, n_time, 3, 3)`` complex
-    covariance tensor at once, matching ``esa_m0_study.py``'s equivalent.
+    covariance tensor at once, matching ``run_surface_study.py``'s equivalent.
     Required on the fine (unbinned, tens-of-thousands-of-channels) WDM grid --
     without it a full-band call allocates tens of GB. Only the binned
     ``grouped_frequency`` call sites are small enough to omit it.
@@ -182,12 +181,12 @@ def projected_aet_noise_components_psd(
     projection_nodes: int = 16,
     frequency_chunk: int = 384,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """AET stack of M0's WDM-kernel-projected analytic OMS/TM components.
+    """AET stack of the surface study's WDM-kernel-projected analytic OMS/TM components.
 
     Each returned array is ``(3, n_time, n_frequency)`` in ``AET_CHANNELS``
     order, matching ``analytic_aet_noise_components_psd``'s layout so the two
     are drop-in interchangeable. The per-channel projection itself is
-    ``esa_m0_study``'s, so M0 and M1 share one estimand by construction rather
+    ``run_surface_study``'s, so the surface study and H_para share one estimand by construction rather
     than by two implementations agreeing.
     """
     oms_result, tm_result = [], []
@@ -218,7 +217,7 @@ def projected_aet_interpolated_surface(
     frequency_chunk: int = 384,
     zero_outside_frequency: bool = False,
 ) -> np.ndarray:
-    """Per-channel wrapper for M0's single-channel projected interpolator.
+    """Per-channel wrapper for the surface study's single-channel projected interpolator.
 
     ``interpolate_surface``'s AET signature with the projected estimand:
     ``source`` is ``(3, n_source_time, n_source_frequency)`` and the result is
@@ -359,10 +358,10 @@ def heldout_binned_diagnostics(
     surface: np.ndarray,
     mask: np.ndarray,
 ) -> dict[str, float]:
-    """Truth-free held-out checks, the binned analogue of M0's.
+    """Truth-free held-out checks, the binned analogue of the surface study's.
 
-    ``esa_m0_study.blind_whitening_diagnostics`` works on single WDM
-    coefficients, where ``z = w / sqrt(S)`` is standard normal. M1's
+    ``run_surface_study.blind_whitening_diagnostics`` works on single WDM
+    coefficients, where ``z = w / sqrt(S)`` is standard normal. H_para's
     likelihood is already pooled, so a cell carries ``nu`` coefficients'
     summed power rather than one signed coefficient. The comparable
     quantities are therefore built from the normalized mean power
@@ -371,10 +370,10 @@ def heldout_binned_diagnostics(
 
         -0.5 * (log S + u)
 
-    which reduces to M0's expression at ``nu = 1``. Both are directly
-    comparable to M0's ``mean_z2`` and ``mean_whittle_log_score``.
+    which reduces to the surface study's expression at ``nu = 1``. Both are directly
+    comparable to the surface study's ``mean_z2`` and ``mean_whittle_log_score``.
 
-    Two of M0's entries are deliberately absent rather than approximated:
+    Two of the surface study's entries are deliberately absent rather than approximated:
     ``mean_z`` and the lag-one products need signed coefficients, which
     pooling discards. ``central_90_fraction`` is computed against the
     ``chi^2_nu`` quantiles appropriate to each cell's own count instead of
@@ -423,9 +422,9 @@ def bin_time_rows(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Count-weighted pooling of already frequency-binned surfaces over time.
 
-    M0 evaluates its likelihood on ~512 time bins rather than every WDM row;
-    M1 previously kept every row, which is only tolerable because it ran at
-    ``nt=32`` (30 rows). At M0's ``nt=2048`` the rows must be pooled the same
+    The surface study evaluates its likelihood on ~512 time bins rather than every WDM row;
+    H_para previously kept every row, which is only tolerable because it ran at
+    ``nt=32`` (30 rows). At the surface study's ``nt=2048`` the rows must be pooled the same
     way for the two analyses to share cells.
     """
     values = np.asarray(surfaces, dtype=float)
@@ -531,7 +530,7 @@ def recovery_metrics(
 
     The likelihood counts remain unchanged: every valid bin is still fitted.
     ``whitening_mask`` selects the continuum cohort -- fitted cells minus the
-    response-null corridors -- and per ESA_M0_METHOD_IMPROVEMENTS that cohort
+    response-null corridors -- and per METHOD_IMPROVEMENTS that cohort
     now carries the headline accuracy and coverage as well as the mean-z2
     scale check. Null corridors are where a point-evaluated reference PSD is
     least meaningful, so scoring interval calibration there conflates model
@@ -809,13 +808,13 @@ def run(args: argparse.Namespace) -> dict:
         xyz_total = hdf["tdi/total"][:, :n_total]
         truth_time = hdf["truth/time_tcb"][:]
         truth_frequency = hdf["truth/frequency_hz"][:]
-        truth_galactic_xyz = hdf["truth/galactic_psd"][:]
+        truth_galactic_xyz = hdf["truth/galactic_csd"][:]
         injected_amplitude = float(hdf.attrs["galactic_amplitude_scale"])
 
     aet_total = xyz_to_aet_series(xyz_total)
     del xyz_total
 
-    # Gaps are applied to the AET series before the WDM transform, using M0's
+    # Gaps are applied to the AET series before the WDM transform, using the surface study's
     # own gating so the two analyses treat an outage identically: zeroed with a
     # cosine taper, then whole WDM rows touched by the taper (plus a buffer)
     # dropped from the likelihood.
@@ -893,17 +892,17 @@ def run(args: argparse.Namespace) -> dict:
     observed_psd = coefficients**2 * conversion
     del coefficients
 
-    # The analytic OMS/TM components enter the M1 likelihood directly, each
+    # The analytic OMS/TM components enter the H_para likelihood directly, each
     # with one free per-channel amplitude (see tv_pspline_psd.multichannel);
     # their sum is also retained for simulation-truth recovery and the
     # response-null diagnostic.
     #
-    # PROJECTED onto the WDM frequency kernel, matching esa_m0_study.py's
+    # PROJECTED onto the WDM frequency kernel, matching run_surface_study.py's
     # estimand: a WDM coefficient measures the squared-Meyer-window average of
     # S across its atom's compact support, not S at the cell centre. Where the
     # spectrum is smooth the two agree, but inside the drifting TDI null comb
     # they differ by orders of magnitude, and comparing a fit to the wrong one
-    # is what made the X2 M0 anchor read log-RMSE 0.81 / coverage 0.19 before
+    # is what made the X2 the surface study anchor read log-RMSE 0.81 / coverage 0.19 before
     # the projection landed (0.05 / 0.78 after).
     #
     # Evaluated DIRECTLY on the fine analysis grid (absolute_time,
@@ -933,8 +932,12 @@ def run(args: argparse.Namespace) -> dict:
     noise_reference_unbinned = oms_reference_unbinned + tm_reference_unbinned
     # zero_outside_frequency: the Galactic component was generated only over
     # the archive band, so quadrature nodes beyond it carry no power.
+    # The A/E/T Galactic truth is rotated from the full XYZ covariance. The
+    # cross spectra are what suppress the Galaxy in T (T/A ~ 8e-5, set by the
+    # ESA arm inequality); rotating the diagonal alone would put it there at
+    # ~1/3 of A and bias the OMS/TM split below 10 mHz.
     galactic_truth_unbinned = projected_aet_interpolated_surface(
-        diagonal_xyz_psd_to_aet(truth_galactic_xyz),
+        np.moveaxis(xyz_covariance_to_aet_diagonal(truth_galactic_xyz), 2, 0),
         truth_time,
         truth_frequency,
         absolute_time,
@@ -950,9 +953,9 @@ def run(args: argparse.Namespace) -> dict:
     # drifting TDI null), coarse on the smooth continuum. This replaces
     # fixed-size pooling, which smears the null wider than its physical width
     # and stiffens the likelihood against the spline.
-    # Prospective split, matching M0: seven-fold repeating blocks with the
+    # Prospective split, matching the surface study: seven-fold repeating blocks with the
     # validation and test folds excluded from the likelihood AND the bin pilot,
-    # so no reported score is in-sample (ESA_M0_METHOD_IMPROVEMENTS item 3).
+    # so no reported score is in-sample (METHOD_IMPROVEMENTS item 3).
     training_rows, validation_rows, test_rows = analysis_row_split(
         absolute_time.size,
         block=args.split_block,
@@ -983,7 +986,7 @@ def run(args: argparse.Namespace) -> dict:
     )
 
     if args.truth_free_bins:
-        # M0's own pilot, reused verbatim so both analyses build bins the same
+        # the surface study's own pilot, reused verbatim so both analyses build bins the same
         # way: robust time-profile medians of retained TRAINING coefficients,
         # then a frequency median filter. Never sees truth, validation or test.
         pilot_log_psd = np.concatenate(
@@ -1036,7 +1039,7 @@ def run(args: argparse.Namespace) -> dict:
     del observed_psd, noise_reference_unbinned, galactic_truth_unbinned
     del galactic_template_unbinned, oms_reference_unbinned, tm_reference_unbinned
 
-    # Pool time rows the way M0 does (~512 bins). Held-out rows get zero weight
+    # Pool time rows the way the surface study does (~512 bins). Held-out rows get zero weight
     # so they never enter the likelihood, and every surface is pooled with the
     # SAME weights so a bin means the same cells in the data and the truth.
     if args.time_bin > 1:
@@ -1273,9 +1276,9 @@ def run(args: argparse.Namespace) -> dict:
     )
 
     # Held-out scores on the rows the likelihood never saw. Until this existed
-    # every M1 number was in-sample while M0's were not, so the two models'
+    # every H_para number was in-sample while the surface study's were not, so the two models'
     # rows in a ladder table were not measuring the same thing. Bands match
-    # esa_m0_study.py exactly so the tables can sit side by side.
+    # run_surface_study.py exactly so the tables can sit side by side.
     bands = {
         "low": grouped_frequency <= 3.0e-3,
         "retained_full": np.ones(grouped_frequency.size, dtype=bool),
@@ -1300,8 +1303,8 @@ def run(args: argparse.Namespace) -> dict:
                 )
                 if not np.any(cohort_mask):
                     continue
-                # The analytic OMS+TM surface is M1's zero-parameter physics
-                # model, the same role M0's reference plays, so the gain is
+                # The analytic OMS+TM surface is H_para's zero-parameter physics
+                # model, the same role the surface study's reference plays, so the gain is
                 # comparable between the two ladders.
                 reference = heldout_binned_diagnostics(
                     cohort_observed[channel_index],
@@ -1419,7 +1422,7 @@ def run(args: argparse.Namespace) -> dict:
             )
             + "; estimand is the WDM-frequency-kernel projected marginal power "
             f"({args.wdm_projection_nodes} quadrature nodes per atom), "
-            "matching esa_m0_study.py; "
+            "matching run_surface_study.py; "
             "all valid bins fitted; response-null neighborhoods omitted only "
             "from continuum-whitening summaries"
         ),
@@ -1463,7 +1466,7 @@ def run(args: argparse.Namespace) -> dict:
             "time bins; u = (P/nu)/S with unit expectation, per-coefficient "
             "Whittle log score -0.5(log S + u), central 90% against chi^2_nu; "
             "gain is versus the analytic OMS+TM reference. Comparable to "
-            "esa_m0_study.py's blind_diagnostics; mean_z and lag-one products "
+            "run_surface_study.py's blind_diagnostics; mean_z and lag-one products "
             "are omitted because pooling discards coefficient signs"
         ),
         **diagnostics,
@@ -1494,7 +1497,7 @@ def parser() -> argparse.ArgumentParser:
         default=output_dir / "aet_diagonal_fullband_fitall_parameter_posterior.png",
     )
     argument_parser.add_argument("--nt", type=int, default=2048,
-        help="WDM time pixels; 2048 matches the M0 study so the two share cells")
+        help="WDM time pixels; 2048 matches the the surface study study so the two share cells")
     argument_parser.add_argument("--fmin-hz", type=float, default=1.0e-4)
     argument_parser.add_argument("--fmax-hz", type=float, default=1.0e-1)
     argument_parser.add_argument("--component-fmax-hz", type=float, default=1.0e-1)
@@ -1523,15 +1526,15 @@ def parser() -> argparse.ArgumentParser:
     )
     argument_parser.add_argument(
         "--pilot-time-profiles", type=int, default=32,
-        help="time profiles for M0's truth-free bin-selection pilot",
+        help="time profiles for the surface study's truth-free bin-selection pilot",
     )
     argument_parser.add_argument(
         "--pilot-frequency-width", type=int, default=31,
-        help="frequency median-filter width for M0's bin-selection pilot",
+        help="frequency median-filter width for the surface study's bin-selection pilot",
     )
     argument_parser.add_argument(
         "--time-bin", type=int, default=4,
-        help="WDM rows pooled per likelihood time bin (M0 uses 4)",
+        help="WDM rows pooled per likelihood time bin (the surface study uses 4)",
     )
     argument_parser.add_argument("--split-block", type=int, default=4)
     argument_parser.add_argument("--split-cycle", type=int, default=7)
@@ -1624,13 +1627,13 @@ def parser() -> argparse.ArgumentParser:
         help=(
             "quadrature frequencies evaluated per chunk when projecting the "
             "analytic reference; must be at least --wdm-projection-nodes. Left "
-            "at 96 (not M0's 384) because this job requests less memory: it "
+            "at 96 (not the surface study's 384) because this job requests less memory: it "
             "only costs loop iterations"
         ),
     )
     argument_parser.add_argument(
         "--mode", choices=("continuous", "gapped"), default="continuous",
-        help="gapped injects outages before the WDM transform, as in M0",
+        help="gapped injects outages before the WDM transform, as in the surface study",
     )
     argument_parser.add_argument(
         "--gap-scenario", choices=("lisa_like", "single"), default="single")
@@ -1643,14 +1646,14 @@ def parser() -> argparse.ArgumentParser:
         "--null-min-frequency", type=float, default=0.02,
         help=(
             "lower edge of the high-continuum band for held-out scores; must "
-            "match esa_m0_study.py's value for the two ladders to share bands"
+            "match run_surface_study.py's value for the two ladders to share bands"
         ),
     )
     argument_parser.add_argument(
         "--wdm-projection-nodes", type=int, default=16,
         help=(
             "quadrature nodes per WDM frequency atom for the projected "
-            "estimand. Must match the M0 runs this fit is tabulated beside"
+            "estimand. Must match the surface runs this fit is tabulated beside"
         ),
     )
     argument_parser.add_argument("--phi-time", type=float, default=100.0)
