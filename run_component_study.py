@@ -1608,11 +1608,17 @@ def parser() -> argparse.ArgumentParser:
         "--fit-t-null-leakage",
         dest="fit_t_null_leakage",
         action="store_true",
-        default=True,
+        default=False,
         help=(
             "fit one free parameter for imperfect test-mass cancellation in T "
-            "(S_T gains kappa * T_TM,A * S_TM); T is a near-null so a sub-percent "
-            "modelling error there becomes order-unity"
+            "(S_T gains kappa * T_TM,A * S_TM). OFF by default: over the full "
+            "364-day archive the analytic model already matches the simulated "
+            "T noise to within 1 percent in every band, and adding kappa turns "
+            "that into an 8-20 percent overshoot below 3 mHz. The residual it "
+            "was calibrated against (kappa ~ 2e-5 to 5.4e-5) does not reproduce "
+            "in a direct Welch comparison, so it appears to be an artefact of "
+            "the nt=32 WDM measurement rather than a noise-model deficiency. "
+            "Kept as an opt-in robustness check."
         ),
     )
     argument_parser.add_argument(

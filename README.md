@@ -23,6 +23,11 @@ H_agn and H_orb are both `run_surface_study.py`, selected with
 so the plotting and diagnostic scripts read it rather than inferring it from
 which flags were passed. H_para is `run_component_study.py --component-noise`.
 
+H_para's T-channel null-leakage term (`kappa`) is **off** by default. Over the
+full archive the analytic noise model matches the simulated `T` to within 1% in
+every band; enabling `--fit-t-null-leakage` turns that into an 8-20% overshoot
+below 3 mHz. It remains available as an opt-in robustness check.
+
 The point of the ladder is not that more physics gives smaller error bars —
 it will — but to show **where the narrowing stops being calibrated**. Report
 interval width, coverage, and bias at every rung.
@@ -91,8 +96,11 @@ is the machine-readable record of the selected results. Those numbers are
   Galaxy and the instrument noise leak into `T` at the ~1e-4 (power) level. The
   Galaxy still supplies ~40% of `T`-channel power (up to 87%) over 0.3-10 mHz,
   so it must **not** be approximated as zero there.
-- **T channel.** The simulated T noise exceeds the analytic model by up to 20x
-  in the counts-weighted mean below 0.3 mHz (A and E agree to <3%). Cause not
-  established; equal-arm geometry, residual laser noise, WDM projection and
-  interpolation artifacts are all ruled out. Measured at `nt=32`; may be much
-  smaller at `nt=2048`.
+- ~~**T channel.** The simulated T noise exceeds the analytic model by up to
+  20x below 0.3 mHz.~~ Resolved: this was the Galactic-foreground bug, not a
+  noise-model error. Against the pre-fix archive the T-channel total was 400x
+  the analytic noise model below 0.3 mHz; against the rebuilt archive it is
+  1.08, with A and E unchanged (1.03 -> 1.04, 1.07 -> 1.10). Compared directly
+  against the simulated `tdi/noise`, the analytic model now agrees to within a
+  few percent in every channel: median simulated/model below 0.3 mHz is
+  A=0.90, E=0.97, T=0.94.

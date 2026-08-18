@@ -10,11 +10,12 @@
 #
 # H_agn/H_orb for the paper's ladder rungs 1 and 2, on one channel.
 #
-#   sbatch ozstar/run_surface.sbatch <channel> <rung> [mode]
-#     channel : A | E | T | X2 | Y2 | Z2
-#     rung    : ref  -- rung 2, response-informed. Fits R+g and R+g+h and
-#                       scores both against the fixed reference R.
-#               free -- rung 1, reference-agnostic free total TV surface.
+#   sbatch ozstar/run_surface.sbatch <channel> <hypothesis> [mode]
+#     channel    : A | E | T | X2 | Y2 | Z2
+#     hypothesis : orb -- H_orb, rung 2, response-informed. Fits R+g and
+#                         R+g+h and scores both against the fixed reference R.
+#                  agn -- H_agn, rung 1, reference-agnostic free total surface.
+#                  (`ref`/`free` remain accepted as the old spellings.)
 #     mode    : continuous (default) | gapped
 #     centre  : gap centre in years (default 0.5); 0.8 puts it on the
 #               Galactic modulation peak rather than a quiet stretch
