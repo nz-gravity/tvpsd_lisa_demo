@@ -99,6 +99,39 @@ sbatch ozstar/run_m0.sbatch E free gapped
 sbatch ozstar/run_m1.sbatch gapped
 ```
 
+### Realistic duty cycle
+
+`gapped` is a single seven-day outage: a stress test, not LISA's expected duty
+cycle. `duty` injects the scheduled 3.5 h repointing every 14 days plus Poisson
+unscheduled outages -- about 60 gaps losing ~5% of the record in duration, but
+**~13% of WDM rows**, because every gap pays a one-hour taper and a one-pixel
+buffer at each edge whatever its length.
+
+```bash
+sbatch ozstar/run_m0.sbatch A free duty     # H_agn
+sbatch ozstar/run_m0.sbatch A ref  duty     # H_orb
+sbatch ozstar/run_m1.sbatch duty            # H_para
+```
+
+The trailing argument is the gap-schedule seed for `duty` (the unscheduled
+outages are random) and the gap centre for `gapped`; a further argument sets
+the edge buffer in WDM pixels. Under one gap the buffer is nearly free
+(2.4% of rows at 0 pixels, 2.6% at 2); under `duty` it dominates the loss:
+
+| buffer [px] | rows lost, one 7-day gap | rows lost, duty cycle |
+|---|---|---|
+| 0 | 2.4% | 7.1% |
+| 1 | 2.5% | 12.8% |
+| 2 | 2.6% | 18.3% |
+
+The one-pixel buffer was selected on a single-gap configuration where it cost
+nothing. It is worth re-deciding under `duty`, where it more than doubles the
+data removed:
+
+```bash
+sbatch ozstar/run_m0.sbatch A ref duty 1 0   # same schedule, no buffer
+```
+
 The gap centre defaults to mid-year. That is a quiet stretch of the Galactic
 modulation (1.7x the annual minimum, log-slope 0.33/yr), so it is the easy
 case. The modulation peaks at t = 0.81 yr at 3.0x the minimum; placing the gap

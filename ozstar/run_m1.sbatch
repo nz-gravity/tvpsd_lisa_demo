@@ -23,13 +23,20 @@
 # gap there is the easy case. Pass 0.8 to place it on the modulation peak
 # (3.0x minimum), which is the harder and more persuasive test.
 #
+# --nt is passed explicitly, not left to the runner default: the lisa_like gap
+# schedule is a function of the record length, which depends on nt, so the three
+# models only see the same outages while this matches run_m0.sbatch's --nt.
+# The preflight asserts the two runners agree before any fit starts.
+#
 # The gapped mode matches run_m0.sbatch's -- one seven-day gap, one-hour cosine
 # taper, one-pixel edge buffer -- so with the same centre the M0 and M1 gap
 # results describe the same outage.
 set -euo pipefail
 
 MODE="${1:-continuous}"
-GAP_CENTRE="${2:-0.5}"
+GAP_CENTRE="${2:-0.5}"   # gapped: centre in years
+GAP_SEED="${2:-1}"       # duty:   gap-schedule seed
+BUFFER="${3:-1}"       # WDM pixels excluded at each gap edge
 case "$MODE" in
     continuous) MODE_ARGS=(--mode continuous) ;;
     gapped)
@@ -38,19 +45,33 @@ case "$MODE" in
             --gap-scenario single
             --single-gap-days 7
             --single-gap-center-year "$GAP_CENTRE"
-            --gap-buffer-pixels 1
+            --gap-buffer-pixels "$BUFFER"
+            --taper-hours 1
+        )
+        ;;
+    duty)
+        # Scheduled 3.5 h repointing every 14 d plus Poisson unscheduled
+        # outages: ~60 gaps and ~5% duty-cycle loss, which costs ~13% of WDM
+        # rows because every gap pays a taper and a buffer at each edge.
+        MODE_ARGS=(
+            --mode gapped
+            --gap-scenario lisa_like
+            --gap-seed "$GAP_SEED"
+            --gap-buffer-pixels "$BUFFER"
             --taper-hours 1
         )
         ;;
     *)
-        echo "unknown mode '$MODE' (expected 'continuous' or 'gapped')" >&2
+        echo "unknown mode '$MODE' (expected continuous, gapped or duty)" >&2
         exit 2
         ;;
 esac
 
 # Tag encodes the gap centre so two gapped runs cannot overwrite each other.
 if [ "$MODE" = "gapped" ]; then
-    TAG="gapped_c${GAP_CENTRE}"
+    TAG="gapped_c${GAP_CENTRE}_b${BUFFER}"
+elif [ "$MODE" = "duty" ]; then
+    TAG="duty_s${GAP_SEED}_b${BUFFER}"
 else
     TAG="$MODE"
 fi
@@ -85,5 +106,6 @@ python -u run_aet_diagonal_pilot.py \
     --output "results/m1_aet_${TAG}_${SLURM_JOB_ID}.npz" \
     --surface-plot "results/m1_aet_${TAG}_${SLURM_JOB_ID}.png" \
     --parameter-plot "results/m1_aet_${TAG}_${SLURM_JOB_ID}_params.png" \
+    --nt 2048 \
     --wdm-projection-nodes 16 \
     --warmup 500 --samples 500

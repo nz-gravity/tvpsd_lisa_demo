@@ -38,7 +38,9 @@ set -euo pipefail
 CHANNEL="${1:?usage: sbatch run_m0.sbatch <channel> <ref|free> [continuous|gapped]}"
 RUNG="${2:?usage: sbatch run_m0.sbatch <channel> <ref|free> [continuous|gapped]}"
 MODE="${3:-continuous}"
-GAP_CENTRE="${4:-0.5}"
+GAP_CENTRE="${4:-0.5}"   # gapped: centre in years
+GAP_SEED="${4:-1}"       # duty:   gap-schedule seed
+BUFFER="${5:-1}"       # WDM pixels excluded at each gap edge
 
 case "$RUNG" in
     ref)
@@ -60,26 +62,39 @@ case "$RUNG" in
 esac
 
 case "$MODE" in
-    continuous)
-        MODE_ARGS=(--mode continuous)
-        ;;
+    continuous) MODE_ARGS=(--mode continuous) ;;
     gapped)
         MODE_ARGS=(
             --mode gapped
             --gap-scenario single
             --single-gap-days 7
             --single-gap-center-year "$GAP_CENTRE"
-            --gap-buffer-pixels 1
+            --gap-buffer-pixels "$BUFFER"
+            --taper-hours 1
+        )
+        ;;
+    duty)
+        # Scheduled 3.5 h repointing every 14 d plus Poisson unscheduled
+        # outages: ~60 gaps and ~5% duty-cycle loss, which costs ~13% of WDM
+        # rows because every gap pays a taper and a buffer at each edge.
+        MODE_ARGS=(
+            --mode gapped
+            --gap-scenario lisa_like
+            --gap-seed "$GAP_SEED"
+            --gap-buffer-pixels "$BUFFER"
+            --taper-hours 1
         )
         ;;
     *)
-        echo "unknown mode '$MODE' (expected 'continuous' or 'gapped')" >&2
+        echo "unknown mode '$MODE' (expected continuous, gapped or duty)" >&2
         exit 2
         ;;
 esac
 
 if [ "$MODE" = "gapped" ]; then
-    TAG="gapped_c${GAP_CENTRE}"
+    TAG="gapped_c${GAP_CENTRE}_b${BUFFER}"
+elif [ "$MODE" = "duty" ]; then
+    TAG="duty_s${GAP_SEED}_b${BUFFER}"
 else
     TAG="$MODE"
 fi

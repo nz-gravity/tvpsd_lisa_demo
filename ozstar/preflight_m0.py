@@ -22,6 +22,7 @@ if str(STUDY_ROOT) not in sys.path:
 import tv_pspline_psd  # noqa: E402
 from esa_m0_study import (  # noqa: E402
     analysis_masks,
+    lisa_like_gaps,
     analytic_channel_noise_psd,
     projected_analytic_channel_noise_components_psd,
     wdm_valid_length,
@@ -215,11 +216,37 @@ def main() -> None:
             f"deviation {np.max(np.abs(flat_projected - 7.0)):.3g}"
         )
 
+    # The three-model gap comparison is only meaningful if all three jobs see
+    # the SAME outages. The schedule is lisa_like_gaps(t_obs_s, seed), and
+    # t_obs_s is derived independently in esa_m0_study and
+    # run_aet_diagonal_pilot by two separate copies of wdm_valid_length. They
+    # agree today; nothing enforces it. Check here, because a divergence would
+    # silently turn "same data, different models" into three different
+    # datasets, with no error raised anywhere.
+    import run_aet_diagonal_pilot as m1  # noqa: E402
+
+    if m1.wdm_valid_length(requested_samples, nt) != n_total:
+        raise RuntimeError(
+            f"record length differs between the runners at nt={nt}: "
+            f"M0 {n_total} vs M1 {m1.wdm_valid_length(requested_samples, nt)}; "
+            "the lisa_like gap schedules would not match"
+        )
+    for seed in (1, 2):
+        if lisa_like_gaps(duration, seed) != m1.lisa_like_gaps(duration, seed):
+            raise RuntimeError(
+                f"lisa_like gap schedules differ between runners at seed={seed}"
+            )
+    shared_schedule = lisa_like_gaps(duration, 1)
+
     print(f"[preflight passed] package={imported}")
     print(f"[preflight passed] archive={archive}")
     print(f"[preflight passed] reference_handling={handling}")
     print("[preflight passed] inference includes response-null training cells")
     print("[preflight passed] AET projection wrappers preserve shape and constants")
+    print(
+        f"[preflight passed] shared gap schedule: t_obs={t_obs_s:.0f}s, "
+        f"{len(shared_schedule)} lisa_like gaps identical across both runners"
+    )
     print(
         "[preflight passed] 16-vs-32 node projection max relative change="
         f"{np.max(projection_relative_change):.3g}"
