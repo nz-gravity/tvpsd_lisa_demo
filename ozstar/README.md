@@ -77,6 +77,24 @@ The current ladder is:
 | 1-2 | any channel, either mode | `run_surface.sbatch <channel> <orb\|agn> [continuous\|gapped]` |
 | 3 | A, E, T jointly, either mode | `run_component.sbatch [continuous\|gapped] [centre]` |
 
+## Refitting only H_para
+
+The surface fits (jobs 15647839--15647854) are converged and current; they are
+unaffected by the component model and must not be resubmitted. To rerun only
+the three H_para jobs -- for the low-frequency OMS anchoring, and to replace the
+duty-cycle fit that timed out at the old 6 h ceiling:
+
+```bash
+ozstar/submit_all.sh --component-only
+```
+
+`run_component_study.py` now holds `S_OMS` at its analytic shape below
+`--oms-anchor-fmax-hz` (default 1 mHz). Below that frequency OMS supplies under
+2 per cent of A and under 4 per cent of T, so the data cannot constrain it and
+the TM/OMS split is unidentifiable; left free the OMS spline runs away and drags
+the fitted total to 5--9x the truth. Pass `--oms-anchor-fmax-hz 0` to recover
+the previous behaviour for comparison.
+
 ## The paper run
 
 Ten jobs, all submittable together; allow the requested two-hour surface-study ceilings

@@ -4,6 +4,8 @@
 #   ozstar/submit_all.sh                     # all three scenarios (17 jobs)
 #   ozstar/submit_all.sh continuous          # one or more of: continuous gapped duty
 #   ozstar/submit_all.sh gapped duty
+#   ozstar/submit_all.sh --component-only    # only H_para (3 jobs), leaving the
+#                                            # surface fits alone
 #
 # Each scenario is one full ladder: the X2 anchor (where one exists), A and E
 # under H_orb and H_agn, and H_para jointly over A/E/T. Re-running submits
@@ -27,7 +29,14 @@ submit() {
     fi
 }
 
-scenarios=("$@")
+component_only=0
+scenarios=()
+for arg in "$@"; do
+    case "${arg}" in
+        --component-only) component_only=1 ;;
+        *) scenarios+=("${arg}") ;;
+    esac
+done
 [[ ${#scenarios[@]} -eq 0 ]] && scenarios=(continuous gapped duty)
 
 for scenario in "${scenarios[@]}"; do
@@ -39,16 +48,18 @@ for scenario in "${scenarios[@]}"; do
         *) echo "unknown scenario: ${scenario} (expected continuous|gapped|duty)" >&2; exit 1 ;;
     esac
 
-    # X2 methods anchors exist for the continuous and single-gap geometries only.
-    case "${scenario}" in
-        continuous) submit ozstar/run_surface_x2.sbatch ;;
-        gapped)     submit ozstar/run_surface_x2_gap7.sbatch ;;
-    esac
+    if [[ ${component_only} -eq 0 ]]; then
+        # X2 methods anchors exist for the continuous and single-gap geometries only.
+        case "${scenario}" in
+            continuous) submit ozstar/run_surface_x2.sbatch ;;
+            gapped)     submit ozstar/run_surface_x2_gap7.sbatch ;;
+        esac
 
-    for hypothesis in orb agn; do
-        for channel in A E; do
-            submit ozstar/run_surface.sbatch "${channel}" "${hypothesis}" ${mode[@]+"${mode[@]}"}
+        for hypothesis in orb agn; do
+            for channel in A E; do
+                submit ozstar/run_surface.sbatch "${channel}" "${hypothesis}" ${mode[@]+"${mode[@]}"}
+            done
         done
-    done
+    fi
     submit ozstar/run_component.sbatch ${mode[@]+"${mode[@]}"}
 done

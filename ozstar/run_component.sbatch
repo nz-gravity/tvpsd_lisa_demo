@@ -5,7 +5,10 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=32G
-#SBATCH --time=06:00:00
+# 20 h, not 6: the continuous fit takes ~3.3 h, but the duty-cycle record
+# fragments the time grid into ~78 gaps and job 15647855 timed out at 6 h with
+# warmup only ~20%% complete. The walltime is a ceiling, not a reservation.
+#SBATCH --time=20:00:00
 #SBATCH --output=/fred/oz200/avajpeyi/projects/WDM_PSD/tvpsd_lisa_demo/ozstar/logs/h_para_%j.log
 #
 # H_para (rung 3, component separation), joint over A/E/T, on the surface study's grid/protocol.

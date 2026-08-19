@@ -1214,6 +1214,8 @@ def run(args: argparse.Namespace) -> dict:
             n_frequency_knots=args.component_frequency_knots,
             phi_tm=args.phi_tm,
             phi_oms=args.phi_oms,
+            oms_anchor_fmax_hz=args.oms_anchor_fmax_hz,
+            oms_anchor_precision=args.oms_anchor_precision,
             fit_t_null_leakage=args.fit_t_null_leakage,
             t_leakage_centre=args.t_leakage_centre,
             n_warmup=args.warmup,
@@ -1604,6 +1606,22 @@ def parser() -> argparse.ArgumentParser:
         ),
     )
     argument_parser.add_argument("--phi-oms", type=float, default=1.0e4)
+    argument_parser.add_argument(
+        "--oms-anchor-fmax-hz",
+        type=float,
+        default=1.0e-3,
+        help=(
+            "hold S_OMS at its analytic shape below this frequency. OMS is "
+            "0.6-1.6%% of A and 0.8-4%% of T there, so the data cannot "
+            "constrain it and the TM/OMS split is unidentifiable (condition "
+            "number ~1.4e3 at 0.13 mHz); left free the OMS spline runs away and "
+            "drags the total. Set 0 to disable."
+        ),
+    )
+    argument_parser.add_argument(
+        "--oms-anchor-precision", type=float, default=1.0e8,
+        help="ridge precision on the anchored low-frequency OMS coefficients",
+    )
     argument_parser.add_argument(
         "--fit-t-null-leakage",
         dest="fit_t_null_leakage",
