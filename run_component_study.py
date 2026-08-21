@@ -1212,12 +1212,7 @@ def run(args: argparse.Namespace) -> dict:
             galactic_template_psd=np.where(model_defined, galactic_template_binned, 0.0),
             mask=fit_valid,
             n_frequency_knots=args.component_frequency_knots,
-            phi_tm=args.phi_tm,
-            phi_oms=args.phi_oms,
-            oms_anchor_fmax_hz=args.oms_anchor_fmax_hz,
-            oms_anchor_precision=args.oms_anchor_precision,
-            fit_t_null_leakage=args.fit_t_null_leakage,
-            t_leakage_centre=args.t_leakage_centre,
+            phi_noise=args.phi_noise,
             n_warmup=args.warmup,
             n_samples=args.samples,
             num_chains=2,
@@ -1392,12 +1387,7 @@ def run(args: argparse.Namespace) -> dict:
         posterior_total_upper=posterior.total_upper,
         amplitude_draws=posterior.amplitude_draws,
         f_knee_hz_draws=posterior.f_knee_draws_hz,
-        t_leakage_draws=posterior.samples.get(
-            "log_t_leakage", np.zeros(0)
-        ),
-        t_leakage_slope_draws=posterior.samples.get(
-            "t_leakage_slope", np.zeros(0)
-        ),
+
         injected_amplitude=injected_amplitude,
         injected_f_knee_hz=2.15e-3,
         phi_time=args.phi_time,
@@ -1593,58 +1583,16 @@ def parser() -> argparse.ArgumentParser:
         "--component-frequency-knots",
         type=int,
         default=12,
-        help="interior knots for each of the TM and OMS frequency splines",
+        help="interior knots for the noise recalibration frequency spline",
     )
     argument_parser.add_argument(
-        "--phi-tm",
+        "--phi-noise",
         type=float,
-        default=1.0e8,
+        default=1.0e4,
         help=(
-            "penalty precision for the test-mass spline; tight by default because "
-            "T is ~27x less sensitive to TM than OMS, so TM is what a low-frequency "
-            "signal can imitate"
+            "roughness-penalty precision for the noise recalibration a(f), the "
+            "one free spectrum multiplying the analytic OMS+TM reference"
         ),
-    )
-    argument_parser.add_argument("--phi-oms", type=float, default=1.0e4)
-    argument_parser.add_argument(
-        "--oms-anchor-fmax-hz",
-        type=float,
-        default=1.0e-3,
-        help=(
-            "hold S_OMS at its analytic shape below this frequency. OMS is "
-            "0.6-1.6%% of A and 0.8-4%% of T there, so the data cannot "
-            "constrain it and the TM/OMS split is unidentifiable (condition "
-            "number ~1.4e3 at 0.13 mHz); left free the OMS spline runs away and "
-            "drags the total. Set 0 to disable."
-        ),
-    )
-    argument_parser.add_argument(
-        "--oms-anchor-precision", type=float, default=1.0e8,
-        help="ridge precision on the anchored low-frequency OMS coefficients",
-    )
-    argument_parser.add_argument(
-        "--fit-t-null-leakage",
-        dest="fit_t_null_leakage",
-        action="store_true",
-        default=False,
-        help=(
-            "fit one free parameter for imperfect test-mass cancellation in T "
-            "(S_T gains kappa * T_TM,A * S_TM). OFF by default: over the full "
-            "364-day archive the analytic model already matches the simulated "
-            "T noise to within 1 percent in every band, and adding kappa turns "
-            "that into an 8-20 percent overshoot below 3 mHz. The residual it "
-            "was calibrated against (kappa ~ 2e-5 to 5.4e-5) does not reproduce "
-            "in a direct Welch comparison, so it appears to be an artefact of "
-            "the nt=32 WDM measurement rather than a noise-model deficiency. "
-            "Kept as an opt-in robustness check."
-        ),
-    )
-    argument_parser.add_argument(
-        "--no-fit-t-null-leakage", dest="fit_t_null_leakage", action="store_false"
-    )
-    argument_parser.add_argument(
-        "--t-leakage-centre", type=float, default=3.0e-5,
-        help="prior centre for the T null-leakage fraction kappa",
     )
     argument_parser.add_argument(
         "--reference-frequency-chunk", type=int, default=96,
@@ -1708,10 +1656,18 @@ def parser() -> argparse.ArgumentParser:
     argument_parser.add_argument(
         "--t-channel-fmin-hz",
         type=float,
-        default=0.0,
+        default=3.0e-3,
         help=(
-            "drop T-channel cells below this frequency; the equal-arm analytic "
-            "T noise model is invalid there (simulated/analytic ~20x at 0.1 mHz)"
+            "drop T-channel cells below this frequency. T is a near-null, so "
+            "where its predicted power dips the ratio of observed to predicted "
+            "explodes: 2.5%% of T cells below 1.5 mHz carry >10x their predicted "
+            "power and the worst carry 4000x, at cells where truth_T sits at "
+            "0.31x its median. The Whittle likelihood is driven by the mean, so "
+            "those cells dominate and drag the shared a(f) to 15x at 0.1 mHz, "
+            "corrupting A and E and biasing the Galactic amplitude by -10%%. "
+            "A and E alone determine a(f) to 1-2%%, so the cut costs little: "
+            "sigma(log A_gal) goes from 0.0040 to 0.0065 nats. Set 0 to keep "
+            "every T cell."
         ),
     )
     argument_parser.add_argument(
